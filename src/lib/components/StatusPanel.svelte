@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { getContext } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import {
     Ellipsis,
@@ -19,18 +18,38 @@
   import * as DropdownMenu from "$lib/components/ui/dropdown-menu";
   import { Separator } from "$lib/components/ui/separator";
   import * as Dialog from "$lib/components/ui/dialog";
-    import {
+  import {
     globalSetupState,
-    type PagePreprocessStageSuccess,
     type PagePreprocessStageResult,
     type PagePreprocessStage,
     type DocumentProcessStage,
-    type FinishedDocumentStage,
+    type FinishedDocumentProcessStage,
+    type ProcessErrorStage,
+    type PagePreprocessStageSuccess,
   } from "./processWorkflowContext.svelte";
 
   const renderState = globalSetupState.state;
-  const statePaths = globalSetupState.paths;
-  
+
+  interface StatusPanelState {
+    time: Date;
+    editingDocumentId: string | undefined;
+    editedFileName: string | undefined;
+    showHistoryMap: Map<string, boolean>;
+    isDropdownOpenMap: Map<string, boolean>;
+    historyHoverTimeoutMap: Map<string, NodeJS.Timeout>;
+    confirmProcessDialogOpenMap: Map<string, boolean>;
+  }
+
+  const statusPanel = $state<StatusPanelState>({
+    time: new Date(),
+    editingDocumentId: undefined,
+    editedFileName: undefined,
+    showHistoryMap: new Map<string, boolean>(),
+    isDropdownOpenMap: new Map<string, boolean>(),
+    historyHoverTimeoutMap: new Map<string, NodeJS.Timeout>(),
+    confirmProcessDialogOpenMap: new Map<string, boolean>(),
+  });
+
   const formatPagesText = (pages: number[]): string => {
     if (pages.length === 1) return pages[0].toString();
     if (pages.length === 2) return `${pages[0]} e ${pages[1]}`;
@@ -54,35 +73,33 @@
     return statusMap[status as keyof typeof statusMap] || "desconhecido";
   };
 
-  let time = $state(new Date());
-  let editingDocumentId = $state<string | undefined>(undefined);
-  let editedFileName = $state("");
-  let showHistoryMap = $state(new Map<string, boolean>());
-  let isDropdownOpenMap = $state(new Map<string, boolean>());
-  let historyHoverTimeoutMap = $state(new Map<string, NodeJS.Timeout>());
-  let confirmProcessDialogOpenMap = $state(new Map<string, boolean>());
-
   type AllDocumentTypes =
-    | (PagePreprocessStage & { listType: "processing"; info: PagePreprocessStageResult })
-    | (DocumentProcessStage & { listType: "processed" })
-    | (FinishedDocumentStage & { listType: "finished" });
+    | (PagePreprocessStage & { listType: "pageProcessStage" })
+    | (DocumentProcessStage & { listType: "documentProcessStage" })
+    | (FinishedDocumentProcessStage & { listType: "finishedDocumentStage" })
+    | (ProcessErrorStage & { listType: "processError" });
 
   const allDocuments = $derived(
     [
-      ...renderState.preprocessPagesStage.map((doc) => ({
+      ...renderState.pagesProcessStage.map((doc) => ({
         ...doc,
-        listType: "processing" as const,
-        info: {} as PagePreprocessStageResult,
+        listType: "pageProcessStage" as const,
       })),
-      ...renderState.finishedDocumentsStage.map((doc) => ({
+      ...renderState.documentsProcessStage.map((doc) => ({
         ...doc,
-        listType: "processed" as const,
+        listType: "documentProcessStage" as const,
       })),
-      ...renderState.finishedDocumentsStage.map((doc) => ({
+      ...renderState.finishedDocumentsProcessStage.map((doc) => ({
         ...doc,
-        listType: "finished" as const,
+        listType: "finishedDocumentStage" as const,
       })),
-    ].sort((a, b) => Math.min(...a.selectedPages) - Math.min(...b.selectedPages)),
+      ...renderState.processErrors.map((doc) => ({
+        ...doc,
+        listType: "processError" as const,
+      })),
+    ].sort(
+      (a, b) => Math.min(...a.selectedPages) - Math.min(...b.selectedPages),
+    ),
   );
 
   const setMapValue = (map: Map<string, any>, id: string, value: any) => {
@@ -90,148 +107,184 @@
   };
 
   const handleHistoryInteraction = (id: string, isEnter: boolean) => {
-    clearTimeout(historyHoverTimeoutMap.get(id));
+    clearTimeout(statusPanel.historyHoverTimeoutMap.get(id));
     if (isEnter) {
-      showHistoryMap = setMapValue(showHistoryMap, id, true);
-      isDropdownOpenMap = setMapValue(isDropdownOpenMap, id, true);
+      statusPanel.showHistoryMap = setMapValue(
+        statusPanel.showHistoryMap,
+        id,
+        true,
+      );
+      statusPanel.isDropdownOpenMap = setMapValue(
+        statusPanel.isDropdownOpenMap,
+        id,
+        true,
+      );
     } else {
       const timeout = setTimeout(() => {
-        showHistoryMap = setMapValue(showHistoryMap, id, false);
-        isDropdownOpenMap = setMapValue(isDropdownOpenMap, id, false);
+        statusPanel.showHistoryMap = setMapValue(
+          statusPanel.showHistoryMap,
+          id,
+          false,
+        );
+        statusPanel.isDropdownOpenMap = setMapValue(
+          statusPanel.isDropdownOpenMap,
+          id,
+          false,
+        );
       }, 300);
-      historyHoverTimeoutMap = setMapValue(historyHoverTimeoutMap, id, timeout);
+      statusPanel.historyHoverTimeoutMap = setMapValue(
+        statusPanel.historyHoverTimeoutMap,
+        id,
+        timeout,
+      );
     }
   };
 
   const handleEditButtonInteraction = (id: string, isEnter: boolean) => {
     if (isEnter) {
-      showHistoryMap = setMapValue(showHistoryMap, id, true);
+      statusPanel.showHistoryMap = setMapValue(
+        statusPanel.showHistoryMap,
+        id,
+        true,
+      );
     } else {
       const timeout = setTimeout(() => {
-        if (!isDropdownOpenMap.get(id)) {
-          showHistoryMap = setMapValue(showHistoryMap, id, false);
+        if (!statusPanel.isDropdownOpenMap.get(id)) {
+          statusPanel.showHistoryMap = setMapValue(
+            statusPanel.showHistoryMap,
+            id,
+            false,
+          );
         }
       }, 300);
-      historyHoverTimeoutMap = setMapValue(historyHoverTimeoutMap, id, timeout);
+      statusPanel.historyHoverTimeoutMap = setMapValue(
+        statusPanel.historyHoverTimeoutMap,
+        id,
+        timeout,
+      );
     }
   };
 
   const startEditing = (
     document:
-      | (DocumentProcessStage & { listType: "processed" })
-      | (FinishedDocumentStage & { listType: "finished" }),
+      | (DocumentProcessStage & { listType: "documentProcessStage" })
+      | (FinishedDocumentProcessStage & { listType: "finishedDocumentStage" }),
   ) => {
-    editingDocumentId = document.id;
-    editedFileName = document.fileName;
+    statusPanel.editingDocumentId = document.id;
+    statusPanel.editedFileName = document.fileName;
   };
 
   const saveFileName = async (
     document:
-      | (DocumentProcessStage & { listType: "processed" })
-      | (FinishedDocumentStage & { listType: "finished" }),
+      | (DocumentProcessStage & { listType: "documentProcessStage" })
+      | (FinishedDocumentProcessStage & { listType: "finishedDocumentStage" }),
   ) => {
-    if (!editedFileName.trim()) return;
+    if (!statusPanel.editedFileName?.trim()) return;
 
     try {
-      let updatedDocumentInfo: PagePreprocessStageResult;
-      if (document.listType === "finished") {
+      let updatedDocumentInfo: DocumentProcessStage;
+      if (document.listType === "finishedDocumentStage") {
         console.log(
           "Renaming finished document:",
           "json path: " + document.imagesDirectory,
-          "new name: " + editedFileName,
+          "new name: " + statusPanel.editedFileName,
         );
         updatedDocumentInfo = await invoke("rename_finished_document", {
-          oldPath: document.info.json_file_path,
-          newName: editedFileName,
+          oldPath: document.imagesDirectory,
+          newName: statusPanel.editedFileName,
         });
       } else {
         updatedDocumentInfo = await invoke("update_file_name", {
-          path: document.json_file_path,
-          name: editedFileName,
+          path: document.imagesDirectory,
+          name: statusPanel.editedFileName,
         });
       }
       console.log("Updated document info:", updatedDocumentInfo);
 
-      if (!updatedDocumentInfo.file_name_history) {
-        updatedDocumentInfo.file_name_history = [];
+      if (!document.fileNameHistory) {
+        document.fileNameHistory = [];
       }
-      if (!updatedDocumentInfo.file_name_history.includes(editedFileName)) {
-        updatedDocumentInfo.file_name_history.push(editedFileName);
+      if (!document.fileNameHistory.includes(statusPanel.editedFileName)) {
+        document.fileNameHistory.push(statusPanel.editedFileName);
       }
 
-      if (document.listType === "finished") {
-        processWorkflowContext.finishedDocumentsStage =
-          processWorkflowContext.finishedDocumentsStage.map((doc) =>
+      if (document.listType === "finishedDocumentStage") {
+        renderState.finishedDocumentsProcessStage =
+          renderState.finishedDocumentsProcessStage.map((doc) =>
             doc.id === document.id
               ? {
                   ...doc,
-                  file_name: updatedDocumentInfo.file_name,
+                  fileName: updatedDocumentInfo.fileName,
                   info: updatedDocumentInfo,
                 }
               : doc,
           );
       } else {
-        processWorkflowContext.processDocumentsStage =
-          processWorkflowContext.processDocumentsStage.map((doc) =>
+        renderState.documentsProcessStage =
+          renderState.documentsProcessStage.map((doc) =>
             doc.id === document.id
               ? {
                   ...doc,
-                  file_name: updatedDocumentInfo.file_name,
+                  fileName: updatedDocumentInfo.fileName,
                   info: updatedDocumentInfo,
                 }
               : doc,
           );
       }
 
-      showHistoryMap = setMapValue(showHistoryMap, document.id, false);
+      statusPanel.showHistoryMap = setMapValue(
+        statusPanel.showHistoryMap,
+        document.id,
+        false,
+      );
     } catch (error) {
       console.error("Error updating file name:", error);
     } finally {
-      editingDocumentId = undefined;
+      statusPanel.editingDocumentId = undefined;
     }
   };
 
   const cancelEditing = () => {
-    editingDocumentId = undefined;
-    editedFileName = "";
+    statusPanel.editingDocumentId = undefined;
+    statusPanel.editedFileName = undefined;
   };
 
   const handleKeyDown = async (
     event: KeyboardEvent,
     document:
-      | (DocumentProcessStage & { listType: "processed" })
-      | (FinishedDocumentStage & { listType: "finished" }),
+      | (DocumentProcessStage & { listType: "documentProcessStage" })
+      | (FinishedDocumentProcessStage & { listType: "finishedDocumentStage" }),
   ) => {
     if (event.key === "Enter") await saveFileName(document);
     else if (event.key === "Escape") cancelEditing();
   };
 
   const elapsedTimes = $derived(
-    processWorkflowContext.preprocessPagesStage.map((page) => ({
+    renderState.pagesProcessStage.map((page) => ({
       id: page.id,
-      elapsed: formatDurationText(page.startTime, time.getTime()),
+      elapsed: formatDurationText(page.startTime, statusPanel.time.getTime()),
     })),
   );
 
   const removeFromProcessed = (document: AllDocumentTypes) => {
-    processWorkflowContext.processDocumentsStage =
-      processWorkflowContext.processDocumentsStage.filter(
-        (doc) => doc.id !== document.id,
-      );
+    renderState.documentsProcessStage =
+      renderState.documentsProcessStage.filter((doc) => doc.id !== document.id);
   };
 
   const addToProcessing = (document: AllDocumentTypes) => {
-    processWorkflowContext.preprocessPagesStage = [
-      ...processWorkflowContext.preprocessPagesStage,
-      { ...document, status: "processing", startTime: Date.now() },
+    renderState.pagesProcessStage = [
+      ...renderState.pagesProcessStage,
+      { ...document, startTime: Date.now() },
     ];
   };
 
   const isProcessedOrFinished = (
     doc: AllDocumentTypes,
-  ): doc is (ProcessDocumentStage | FinishedDocumentStage) & {
-    listType: "processed" | "finished";
-  } => doc.listType === "processed" || doc.listType === "finished";
+  ): doc is (DocumentProcessStage | FinishedDocumentProcessStage) & {
+    listType: "documentProcessStage" | "finishedDocumentStage";
+  } =>
+    doc.listType === "documentProcessStage" ||
+    doc.listType === "finishedDocumentStage";
 
   const handleFinalPipeline = async (document: AllDocumentTypes) => {
     if (!isProcessedOrFinished(document)) return;
@@ -241,110 +294,96 @@
     addToProcessing(document);
 
     try {
-      await invoke("final_pipeline", { documentInfo: document.info });
-      document.status = "completed";
+      await invoke("final_pipeline", {
+        documentInfo: document.preprocessPagesStageResult,
+      });
       document.endTime = Date.now();
-      processWorkflowContext.finishedDocumentsStage = [
-        ...processWorkflowContext.finishedDocumentsStage,
+      renderState.finishedDocumentsProcessStage = [
+        ...renderState.finishedDocumentsProcessStage,
+
         document,
       ];
     } catch (error) {
       console.error("Error in final pipeline:", error);
-      document.status = "error";
-      document.error = error instanceof Error ? error.message : String(error);
-      processWorkflowContext.processDocumentsStage = [
-        ...processWorkflowContext.processDocumentsStage,
+      renderState.documentsProcessStage = [
+        ...renderState.documentsProcessStage,
         document,
       ];
     } finally {
-      processWorkflowContext.preprocessPagesStage = processWorkflowContext.preprocessPagesStage.filter(
+      renderState.pagesProcessStage = renderState.pagesProcessStage.filter(
         (page) => page.id !== document.id,
       );
     }
   };
 
   const setConfirmProcessDialogOpen = (id: string, isOpen: boolean) => {
-    confirmProcessDialogOpenMap = new Map(confirmProcessDialogOpenMap).set(
-      id,
-      isOpen,
-    );
+    statusPanel.confirmProcessDialogOpenMap = new Map(
+      statusPanel.confirmProcessDialogOpenMap,
+    ).set(id, isOpen);
   };
 
   const isConfirmProcessDialogOpen = (id: string) => {
-    return confirmProcessDialogOpenMap.get(id) || false;
+    return statusPanel.confirmProcessDialogOpenMap.get(id) || false;
   };
 
   const handleRetry = async (document: AllDocumentTypes) => {
-    if (document.listType !== "processed") return; // Only processed documents can be retried
+    if (document.listType !== "documentProcessStage") return; // Only processed documents can be retried
 
-    const newProcess: PreprocessPagesStage = {
+    const pageProcessStage: PagePreprocessStage = {
       id: uuidv4(),
+      documentPath: document.documentPath,
+      dataDirectory: document.dataDirectory,
       imagesDirectory: document.imagesDirectory,
-      pages: [...document.pages],
-      status: "processing",
+      selectedPages: document.selectedPages,
       startTime: Date.now(),
     };
 
-    processWorkflowContext.preprocessPagesStage = [
-      ...processWorkflowContext.preprocessPagesStage,
-      newProcess,
+    renderState.pagesProcessStage = [
+      ...renderState.pagesProcessStage,
+      pageProcessStage,
     ];
 
-    processWorkflowContext.processDocumentsStage =
-      processWorkflowContext.processDocumentsStage.filter(
-        (doc) => doc.id !== document.id,
-      );
+    renderState.documentsProcessStage =
+      renderState.documentsProcessStage.filter((doc) => doc.id !== document.id);
 
     try {
-      const res = await invoke<DocumentInfo>("anthropic_pipeline", {
-        paths: newProcess.pages,
-      });
+      const preprocessPagesStateResult: PagePreprocessStageResult =
+        await invoke("generate_file_name", {
+          processDocumentProcessStage: document,
+        });
 
-      const newProcessedDocument: ProcessDocumentStage & {
-        listType: "processed";
-      } = {
-        ...newProcess,
-        listType: "processed",
-        file_name: res.file_name,
-        json_file_path: res.json_file_path,
-        info: {
-          ...res,
-        },
-        status: "completed",
+      const pageProcessStageSuccess: PagePreprocessStageSuccess = {
+        ...pageProcessStage,
         endTime: Date.now(),
+        elapsedTime: 0,
+        preprocessPagesStageResult: preprocessPagesStateResult,
       };
 
-      processWorkflowContext.processDocumentsStage = [
-        ...processWorkflowContext.processDocumentsStage,
-        newProcessedDocument,
-      ];
-    } catch (err) {
-      console.error("Error in anthropic_pipeline:", err);
-      const errorProcessedDocument: ProcessDocumentStage & {
-        listType: "processed";
-      } = {
-        ...newProcess,
-        listType: "processed",
-        file_name: "",
-        json_file_path: "",
-        info: {} as DocumentInfo,
-        status: "error",
-        endTime: Date.now(),
-        error: err instanceof Error ? err.toString() : String(err),
+      console.log("pageProcessStageSuccess:", pageProcessStageSuccess);
+
+      const processDocumentStage: DocumentProcessStage = {
+        ...pageProcessStageSuccess,
+        fileName: preprocessPagesStateResult.suggested_file_name,
+        fileNameHistory: [preprocessPagesStateResult.suggested_file_name],
       };
-      processWorkflowContext.processDocumentsStage = [
-        ...processWorkflowContext.processDocumentsStage,
-        errorProcessedDocument,
+
+      renderState.documentsProcessStage = [
+        ...renderState.documentsProcessStage,
+        processDocumentStage,
       ];
+
+      console.log("generate_file_name:", preprocessPagesStateResult);
+    } catch (error) {
+      console.error("Error in generate_file_name:", error);
     } finally {
-      processWorkflowContext.preprocessPagesStage = processWorkflowContext.preprocessPagesStage.filter(
-        (pp) => pp.id !== newProcess.id,
+      renderState.pagesProcessStage = renderState.pagesProcessStage.filter(
+        (pp) => pp.id !== pageProcessStage.id,
       );
     }
   };
 
   const isCurrentPage = (document: AllDocumentTypes) => {
-    return document.pages.includes(processWorkflowContext.currentPageNumber);
+    return document.selectedPages.includes(renderState.pageNumber);
   };
 
   const handleGlobalKeydown = (event: KeyboardEvent) => {
@@ -359,13 +398,13 @@
     }
   };
 
-  const openInExplorer = async (document: FinishedDocumentStage) => {
+  const openInExplorer = async (document: FinishedDocumentProcessStage) => {
     try {
       const fullPath =
-        document.info.json_file_path
+        document.imagesDirectory
           .replace(/(.+)-data(\\|\/)[^\\\/]+\.json$/, "$1-data\\done\\")
           .replace(/\//g, "\\") +
-        document.file_name +
+        document.fileName +
         ".pdf";
       console.log(fullPath);
       await invoke("open_in_explorer", { path: fullPath });
@@ -375,17 +414,17 @@
   };
 
   const getRingStyle = (document: AllDocumentTypes): string => {
-    if (document.listType === "finished") {
+    if (document.listType === "pageProcessStage") {
       return "ring-4 ring-[rgba(0,128,0,1)]";
-    } else if (document.listType === "processed") {
+    } else if (document.listType === "documentProcessStage") {
       return "ring-4 ring-[rgba(186,79,125,1)]";
     } else {
       return "ring-4 ring-[rgba(255,165,0,0.8)]";
     }
-  }
+  };
 
   $effect(() => {
-    const interval = setInterval(() => (time = new Date()), 1000);
+    const interval = setInterval(() => (statusPanel.time = new Date()), 1000);
     window.addEventListener("keydown", handleGlobalKeydown);
     return () => {
       clearInterval(interval);
@@ -411,24 +450,26 @@
         <Card.Header class="pb-1 flex-shrink-0">
           <Card.Title class="flex flex-col gap-1 text-sm">
             <span class="font-semibold text-primary break-all">
-              {#if document.listType === "processing"}
-                Processando ({document.pages.length > 1 ? "páginas" : "página"}: {formatPagesText(
-                  document.pages,
-                )})
-              {:else if document.listType === "finished"}
+              {#if document.listType === "pageProcessStage"}
+                Processando ({document.selectedPages.length > 1
+                  ? "páginas"
+                  : "página"}: {formatPagesText(document.selectedPages)})
+              {:else if document.listType === "documentProcessStage"}
                 Documento Finalizado:
               {:else}
-                Nome sugerido (página: {formatPagesText(document.pages)}):
+                Nome sugerido (página: {formatPagesText(
+                  document.selectedPages,
+                )}):
               {/if}
             </span>
-            {#if document.listType !== "processing"}
-              {#if editingDocumentId === document.id}
+            {#if document.listType !== "pageProcessStage" && document.listType !== "processError"}
+              {#if statusPanel.editingDocumentId === document.id}
                 <div class="w-full h-full space-y-1">
                   <!-- svelte-ignore a11y_autofocus -->
                   <div
                     class="w-full p-2 border rounded-md font-semibold text-sm focus:outline-none focus:ring-1 focus:ring-primary break-all min-h-[1.5em] max-h-[50vh] overflow-y-auto"
                     contenteditable="true"
-                    bind:textContent={editedFileName}
+                    bind:textContent={statusPanel.editedFileName}
                     onkeydown={(e) => handleKeyDown(e, document)}
                     onfocus={(e) => {
                       if (e.target instanceof Node) {
@@ -448,7 +489,7 @@
                       size="icon"
                       variant="default"
                       onclick={() => saveFileName(document)}
-                      disabled={!editedFileName.trim()}
+                      disabled={!statusPanel.editedFileName?.trim()}
                       class="h-7 w-7"
                     >
                       <Check class="h-3.5 w-3.5" />
@@ -465,19 +506,21 @@
                 </div>
               {:else}
                 <span class="break-all w-full font-semibold text-sm mb-1">
-                  {document.file_name}
+                  {document.fileName}
                 </span>
                 <div class="flex justify-end space-x-1 relative">
                   <div class="relative">
-                    {#if document.info?.file_name_history && document.info.file_name_history.length > 1}
+                    {#if document.fileNameHistory && document.fileNameHistory.length > 1}
                       <!-- svelte-ignore a11y_no_static_element_interactions -->
                       <div
                         class="absolute right-full transition-all duration-300 ease-in-out transform"
-                        class:translate-x-[100%]={!showHistoryMap.get(
+                        class:translate-x-[100%]={!statusPanel.showHistoryMap.get(
                           document.id,
                         )}
-                        class:opacity-0={!showHistoryMap.get(document.id)}
-                        class:pointer-events-none={!showHistoryMap.get(
+                        class:opacity-0={!statusPanel.showHistoryMap.get(
+                          document.id,
+                        )}
+                        class:pointer-events-none={!statusPanel.showHistoryMap.get(
                           document.id,
                         )}
                         onmouseenter={() =>
@@ -486,7 +529,7 @@
                           handleHistoryInteraction(document.id, false)}
                       >
                         <DropdownMenu.Root
-                          open={isDropdownOpenMap.get(document.id)}
+                          open={statusPanel.isDropdownOpenMap.get(document.id)}
                         >
                           <DropdownMenu.Trigger asChild let:builder>
                             <Button
@@ -498,7 +541,7 @@
                               <History class="h-3.5 w-3.5" />
                             </Button>
                           </DropdownMenu.Trigger>
-                          {#key document.info.file_name_history}
+                          {#key document.fileNameHistory}
                             <DropdownMenu.Content
                               class="w-96 max-w-[90vw] max-h-60 overflow-hidden flex flex-col"
                               onmouseenter={() =>
@@ -515,23 +558,24 @@
                                 <DropdownMenu.Separator />
                               </div>
                               <div class="overflow-y-auto">
-                                {#each document.info.file_name_history
+                                {#each document.fileNameHistory
                                   .slice()
                                   .reverse() as historyItem}
                                   <DropdownMenu.Item
                                     onclick={() => {
-                                      editedFileName = historyItem;
+                                      statusPanel.editedFileName = historyItem;
                                       saveFileName(document);
-                                      isDropdownOpenMap = setMapValue(
-                                        isDropdownOpenMap,
-                                        document.id,
-                                        false,
-                                      );
+                                      statusPanel.isDropdownOpenMap =
+                                        setMapValue(
+                                          statusPanel.isDropdownOpenMap,
+                                          document.id,
+                                          false,
+                                        );
                                     }}
                                     class="break-all cursor-pointer"
                                   >
                                     {historyItem}
-                                    {historyItem === document.file_name
+                                    {historyItem === document.fileName
                                       ? " (nome atual)"
                                       : ""}
                                   </DropdownMenu.Item>
@@ -554,7 +598,7 @@
                     >
                       <Pencil class="h-3.5 w-3.5" />
                     </Button>
-                    {#if document.listType === "finished"}
+                    {#if document.listType === "documentProcessStage"}
                       <Button
                         size="icon"
                         variant="default"
@@ -563,7 +607,7 @@
                       >
                         <FolderOpen class="h-3.5 w-3.5" />
                       </Button>
-                    {:else if document.listType === "processed"}
+                    {:else if document.listType === "finishedDocumentStage"}
                       <Dialog.Root
                         open={isConfirmProcessDialogOpen(document.id)}
                         onOpenChange={(open) =>
@@ -582,16 +626,16 @@
                         <Dialog.Content class="sm:max-w-[425px]">
                           <Dialog.Header>
                             <Dialog.Title>
-                              {document.pages.length > 1
+                              {document.selectedPages.length > 1
                                 ? "Processar as páginas selecionadas?"
                                 : "Processar página selecionada?"}
                             </Dialog.Title>
                             <Dialog.Description>
-                              Você está prestes a processar {document.pages
-                                .length > 1
+                              Você está prestes a processar {document
+                                .selectedPages.length > 1
                                 ? "as páginas"
                                 : "a página"}
-                              {formatPagesText(document.pages)}. Deseja
+                              {formatPagesText(document.selectedPages)}. Deseja
                               continuar?
                             </Dialog.Description>
                           </Dialog.Header>
@@ -615,14 +659,14 @@
         <Card.Content class="space-y-1 text-xs overflow-y-auto">
           <p>
             <span class="font-semibold text-primary">Status:</span>
-            {document.listType === "finished"
+            {document.listType === "finishedDocumentStage"
               ? "Finalizado"
-              : translateStatusText(document.status)}
+              : translateStatusText(document.listType)}
           </p>
-          {#if document.listType === "processing"}
+          {#if document.listType === "pageProcessStage"}
             <p>
               <span class="font-semibold text-primary">Tempo decorrido:</span>
-              {#key time}<span
+              {#key statusPanel.time}<span
                   >{elapsedTimes.find((t) => t.id === document.id)
                     ?.elapsed}</span
                 >{/key}
@@ -635,22 +679,22 @@
               {formatDurationText(document.startTime, document.endTime)}
             </p>
           {/if}
-          {#if document.listType === "finished"}
+          {#if document.listType === "documentProcessStage"}
             <p>
               <span class="font-semibold text-primary">Páginas:</span>
-              {formatPagesText(document.pages)}
+              {formatPagesText(document.selectedPages)}
             </p>
           {/if}
-          {#if document.status === "error"}
+          {#if document.listType === "processError"}
             <p class="text-red-500">
               <span class="font-semibold">Erro:</span>
-              {document.error}
+              {document.errorMessage}
             </p>
             <Button
               size="sm"
               variant="outline"
               onclick={() =>
-                document.listType === "processed" && handleRetry(document)}
+                document.listType === "processError" && handleRetry(document)}
               class="mt-2"
             >
               <RefreshCw class="h-3.5 w-3.5 mr-1" />
@@ -676,18 +720,19 @@
               </p>
               <p>
                 <span class="font-semibold text-primary">Fim:</span>
-                {new Date(document.endTime!).toLocaleString()}
+                {document.listType === "documentProcessStage" &&
+                  new Date(document.endTime).toLocaleString()}
               </p>
-              {#if document.error}
+              {#if document.listType === "processError"}
                 <p class="text-red-500">
                   <span class="font-semibold">Erro:</span>
-                  {document.error}
+                  {document.errorMessage}
                 </p>
               {/if}
               <p class="font-semibold text-primary">info:</p>
               <pre
                 class="text-wrap w-full max-w-full overflow-x-auto whitespace-pre-wrap break-words text-[10px]">
-                {JSON.stringify(document.info, null, 2)}
+                {JSON.stringify(document, null, 2)}
               </pre>
             </Collapsible.Content>
           </Collapsible.Root>

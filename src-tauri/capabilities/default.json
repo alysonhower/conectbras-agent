@@ -17,6 +17,7 @@
     "core:tray:default",
     "fs:default",
     "dialog:allow-open",
+    "fs:allow-copy-file",
     "log:allow-log",
     {
       "identifier": "fs:allow-read-file",

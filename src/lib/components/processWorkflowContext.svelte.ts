@@ -1,27 +1,31 @@
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 
-// {
-//   "dates": [
-//     {
-//       "date": "2018-04-25",
-//       "description": "Data de emissão da Nota Fiscal de Serviços (NFS-e)."
-//     },
-//     {
-//       "date": "2011",
-//       "description": "Ano de referência da AIDF (Autorização para Impressão de Documentos Fiscais)."
-//     }
-//   ],
-//   "type_name": "Nota Fiscal de Serviços Eletrônica",
-//   "type_abbr": "NFS-e",
-//   "summary": "Prestação de serviços de impressão de 130 certificados de contribuição para a Federação Nacional das APAEs, totalizando R$ 6.800,00.",
-//   "suggested_file_name": "2018-04-25-NFS-E-prestacao_de_servicos_de_impressao_de_130_certificados_de_contribuicao_para_a_federacao_nacional_das_apaes_totalizando_6800"
-// }
+export interface ExtactDocumentImagesStage {
+  documentPath: string;
+  documentClonePath: string;
+  imagesDirectory: string;
+  startTime: number;
+}
+
+export interface ExtactDocumentImagesStageSuccess
+  extends ExtactDocumentImagesStage {
+  endTime: number;
+  elapsedTime: number;
+  documentClonePath: string;
+}
+
+export interface ExtactDocumentImagesStageError
+  extends ExtactDocumentImagesStage {
+  endTime: number;
+  elapsedTime: number;
+  errorMessage: string;
+}
 
 export interface PagePreprocessStage {
   id: string;
   selectedPages: number[];
+  dataDirectory: string;
   imagesDirectory: string;
-  status: "pending" | "completed" | "error";
   startTime: number;
 }
 
@@ -30,10 +34,10 @@ export interface PagePreprocessStageResult {
     date: string;
     description: string;
   }[];
-  typeName: string;
-  typeAbbr: string;
+  type_name: string;
+  type_abbr: string;
   summary: string;
-  suggestedFileName: string;
+  suggested_file_name: string;
 }
 
 export interface PagePreprocessStageSuccess extends PagePreprocessStage {
@@ -43,36 +47,18 @@ export interface PagePreprocessStageSuccess extends PagePreprocessStage {
 }
 
 export interface DocumentProcessStage extends PagePreprocessStageSuccess {
+  documentPath: string;
   fileName: string;
+  fileNameHistory: string[];
 }
 
-export interface ProcessError extends PagePreprocessStage {
+export interface PagePreprocessStageError extends PagePreprocessStage {
   endTime: number;
   elapsedTime: number;
   errorMessage: string;
 }
 
-export interface FinishedDocumentStage extends DocumentProcessStage {
-}
-
-// export interface RenderState {
-//   path: string | undefined;
-//   dataPath: string | undefined;
-//   document: PDFDocumentProxy | undefined;
-//   page: PDFPageProxy | undefined;
-//   scale: number;
-//   rotation: number;
-//   numPages: number;
-//   pageNumber: number;
-//   pageRendering: boolean;
-//   pageNumPending: number | undefined;
-//   metadata: any | undefined;
-//   isActive: boolean;
-//   confirmProcessDialogOpen: boolean;
-//   showStatusCanvas: boolean;
-//   isExtractingImages: boolean;
-//   extractedPages: number[];
-// }
+export interface FinishedDocumentProcessStage extends DocumentProcessStage {}
 
 interface SetupState {
   documentPath: string;
@@ -87,14 +73,15 @@ interface SetupState {
   metadata: any | undefined;
   isActive: boolean;
   isDialogOpen: boolean;
-  showStatusCanvas: boolean;
+  isShowStatusCanvas: boolean;
+  isShowShortcuts: boolean;
   isExtractingImages: boolean;
   extractedPages: number[];
   selectedPages: number[];
-  preprocessPagesStage: PagePreprocessStage[];
-  processDocumentsStage: DocumentProcessStage[];
-  finishedDocumentsStage: FinishedDocumentStage[];
-  processError: ProcessError[];
+  pagesProcessStage: PagePreprocessStage[];
+  documentsProcessStage: DocumentProcessStage[];
+  finishedDocumentsProcessStage: FinishedDocumentProcessStage[];
+  processErrors: PagePreprocessStageError[];
 }
 
 class GlobalSetupState {
@@ -111,35 +98,44 @@ class GlobalSetupState {
     metadata: undefined,
     isActive: false,
     isDialogOpen: false,
-    showStatusCanvas: true,
+    isShowStatusCanvas: true,
     isExtractingImages: false,
+    isShowShortcuts: false,
     extractedPages: [],
     selectedPages: [],
-    preprocessPagesStage: [],
-    processDocumentsStage: [],
-    finishedDocumentsStage: [],
-    processError: [],
+    pagesProcessStage: [],
+    documentsProcessStage: [],
+    finishedDocumentsProcessStage: [],
+    processErrors: [],
   });
 
   constructor(documentPath: string) {
     this.state.documentPath = documentPath;
   }
 
-  get dataPath() {
+  get documentClonePath() {
     const documentPath = this.state.documentPath;
-    const dataPath = documentPath.endsWith(".pdf")
+    const dataDirectory = documentPath.endsWith(".pdf")
       ? documentPath.replace(".pdf", "-data")
       : documentPath + "-data";
-    return dataPath;
+    const documentClonePath = `${dataDirectory}\\${documentPath.split("\\").pop()}`;
+    return documentClonePath;
+  }
+
+  get dataDirectory() {
+    const documentPath = this.state.documentPath;
+    const dataDirectory = documentPath.endsWith(".pdf")
+      ? documentPath.replace(".pdf", "-data")
+      : documentPath + "-data";
+    return dataDirectory;
   }
 
   get imagesDirectory() {
-    const dataPath = this.dataPath;
-    const imagesDirectory = `${dataPath}\\images`;
+    const dataDirectory = this.dataDirectory;
+    const imagesDirectory = `${dataDirectory}\\images`;
     return imagesDirectory;
   }
 
-  
   async clearState() {
     await this.state.documentProxy?.destroy();
     this.state.documentPath = "";
@@ -154,15 +150,15 @@ class GlobalSetupState {
     this.state.metadata = undefined;
     this.state.isActive = false;
     this.state.isDialogOpen = false;
-    this.state.showStatusCanvas = true;
+    this.state.isShowStatusCanvas = true;
     this.state.isExtractingImages = false;
     this.state.extractedPages = [];
     this.state.selectedPages = [];
-    this.state.preprocessPagesStage = [];
-    this.state.processDocumentsStage = [];
-    this.state.finishedDocumentsStage = [];
-    this.state.processError = [];
+    this.state.pagesProcessStage = [];
+    this.state.documentsProcessStage = [];
+    this.state.finishedDocumentsProcessStage = [];
+    this.state.processErrors = [];
   }
 }
 
-export const globalSetupState = $state.raw(new GlobalSetupState(""));
+export const globalSetupState = $state(new GlobalSetupState(""));

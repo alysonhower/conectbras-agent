@@ -1,7 +1,7 @@
 {
-  "productName": "auxiliar-de-cadastros",
+  "productName": "conectbras-agent",
   "version": "0.1.0",
-  "identifier": "com.test.dev",
+  "identifier": "com.agent.conectbras",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
@@ -11,7 +11,7 @@
   "app": {
     "windows": [
       {
-        "title": "auxiliar-de-cadastros",
+        "title": "conectbras-agent",
         "width": 800,
         "height": 600,
         "resizable": true,
@@ -33,9 +33,10 @@
       "icons/icon.ico"
     ],
     "externalBin": [
-      "binaries/extract-pdf-pages",
       "binaries/filenamegen"
-    ]
-  },
-  "$schema": "../node_modules/@tauri-apps/cli/schema.json"
+    ],
+    "resources": {
+      "resources/*": "resources/"
+    }
+  }
 }

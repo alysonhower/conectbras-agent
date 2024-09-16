@@ -1,0 +1,125 @@
+DATES_EXTRACTION_PROMPT: |
+  # Dates Extraction
+
+  ## Task & Context
+
+  You're an expert in data extraction and analysis. You're tasked with extracting the dates presented in the context and organizing them in a hierarchical list as a valid JSON.
+
+  ### Context
+  ```
+  {context}
+  ```
+
+  ## Instructions
+
+  1. Extract each explicit or strongly implied date from the context and format as follows:
+     - Month and day only: `MM-DD`
+     - Month and year only: `YYYY-MM`
+     - Year only: `YYYY`
+     - Complete date: `YYYY-MM-DD`
+     - Do not return parts of dates that are not present in the text.
+
+  2. For each date extracted, provide a description of its relevance within the document in Brazilian Portuguese.
+
+  3. Date schema:
+     ```
+     {date_schema}
+     ```
+
+  4. Organize the extracted dates into a hierarchical list:
+     - Most important dates at the beginning
+     - Less important dates at the end
+     - Most relevant date should be `dates[0]`
+     - Least relevant date should be `dates[-1]`
+     - If no dates, return an empty list
+
+  5. Dates schema:
+     ```
+     {dates_schema}
+     ```
+
+  ## Output
+
+  Provide only the dates JSON containing all the extracted dates. Output should be valid JSON without additional formatting, comments, or markdown syntax.
+
+DOCUMENT_TYPE_EXTRACTION_PROMPT: |
+  # Document Type Extraction
+
+  ## Task & Context
+
+  You're an expert in data extraction and analysis. You're tasked with extracting the type of document from the context as a valid JSON.
+
+  ### Context
+  ```
+  {context}
+  ```
+
+  ## Instructions
+
+  1. Extract explicit or strongly implied document type from the context:
+     - `type_name`: type of document in Brazilian Portuguese
+     - `type_abbr`: abbreviation for the type of document
+
+  2. If type name is not explicit, create one based on document content.
+
+  3. If type abbreviation is not explicit, create one based on the document type.
+
+  4. Document type schema:
+     ```
+     {document_type_schema}
+     ```
+
+  ## Output
+
+  Provide only the document type JSON containing the type and abbreviation. Output should be valid JSON without additional formatting, comments, or markdown syntax.
+
+DOCUMENT_SUMMARY_EXTRACTION_PROMPT: |
+  # Document Summary Extraction
+
+  ## Task & Context
+
+  You're an expert in data extraction and analysis. You're tasked with contextualizing the document with details relevant to the document type as a valid JSON.
+
+  ### Context
+  ```
+  {context}
+  ```
+
+  ## Instructions
+
+  Generate a single concise sentence (max 200 characters) to contextualize the document:
+
+  1. Describe the purpose, action, or transaction recorded.
+  2. Include important details relevant to this document type.
+  3. Avoid meta references (e.g., "o documento declara...", "o documento é uma...", etc.).
+  4. Do not mention document type or issuance details.
+  5. Start directly, without preambles.
+  6. Write in telegraphic style (e.g., omit articles, prepositions, unnecessary words, etc.).
+  7. Exclude sensitive information.
+  8. Omit less relevant information (instructions, taxes, fees, etc.).
+  9. Be specific, not vague (avoid generic phrases like "serviço prestado...", "transação realizada...", "quitação de dívida...", etc.).
+  10. Use Brazilian Portuguese.
+
+  Document summary schema:
+  ```
+  {document_summary_schema}
+  ```
+
+  ## Output
+
+  Provide only the JSON containing the document summary. Output should be valid JSON without additional formatting, comments, or markdown syntax.
+
+REFLECTION_PROMPT: |
+  # Reflection and Error Correction
+
+  ## Previous Output
+  ```
+  {wrong_answer}
+  ```
+
+  ## Error
+  ```
+  {error}
+  ```
+
+  Consider the error above, fix it, and try again. The response must contain only valid JSON without tags. Do not add any sentence before or after the JSON. Do not repeat the schema.

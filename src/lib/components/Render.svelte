@@ -39,6 +39,9 @@
   import { emit, listen } from "@tauri-apps/api/event";
   import {
     globalSetupState,
+    type ExtactDocumentImagesStage,
+    type ExtactDocumentImagesStageSuccess,
+    type ExtactDocumentImagesStageError,
     type PagePreprocessStageSuccess,
     type PagePreprocessStageResult,
     type PagePreprocessStage,
@@ -136,7 +139,7 @@
     let borderColor: string;
 
     if (
-      renderState.finishedDocumentsStage.some((fd) =>
+      renderState.finishedDocumentsProcessStage.some((fd) =>
         fd.selectedPages.includes(pageNumber),
       )
     ) {
@@ -145,7 +148,7 @@
       textColor = "rgba(0, 100, 0, 1)";
       borderColor = "rgba(0, 128, 0, 1)";
     } else if (
-      renderState.processDocumentsStage.some((pp) =>
+      renderState.documentsProcessStage.some((pp) =>
         pp.selectedPages.includes(pageNumber),
       )
     ) {
@@ -154,7 +157,7 @@
       textColor = "rgba(156, 49, 95, 1)";
       borderColor = "rgba(186, 79, 125, 1)";
     } else if (
-      renderState.preprocessPagesStage.some((pp) =>
+      renderState.pagesProcessStage.some((pp) =>
         pp.selectedPages.includes(pageNumber),
       )
     ) {
@@ -301,13 +304,13 @@
   const handleSelectPage = () => {
     if (!renderState.extractedPages.includes(validPageNumber)) return;
     if (
-      renderState.preprocessPagesStage.some((pp) =>
+      renderState.pagesProcessStage.some((pp) =>
         pp.selectedPages.includes(validPageNumber),
       ) ||
-      renderState.processDocumentsStage.some((pp) =>
+      renderState.documentsProcessStage.some((pp) =>
         pp.selectedPages.includes(validPageNumber),
       ) ||
-      renderState.finishedDocumentsStage.some((pp) =>
+      renderState.finishedDocumentsProcessStage.some((pp) =>
         pp.selectedPages.includes(validPageNumber),
       )
     )
@@ -333,13 +336,13 @@
     const currentIndex = renderState.selectedPages.indexOf(pageNumber);
     const availablePages = renderState.extractedPages.filter(
       (page) =>
-        !renderState.preprocessPagesStage.some((pp) =>
+        !renderState.pagesProcessStage.some((pp) =>
           pp.selectedPages.includes(page),
         ) &&
-        !renderState.processDocumentsStage.some((pp) =>
+        !renderState.documentsProcessStage.some((pp) =>
           pp.selectedPages.includes(page),
         ) &&
-        !renderState.finishedDocumentsStage.some((pp) =>
+        !renderState.finishedDocumentsProcessStage.some((pp) =>
           pp.selectedPages.includes(page),
         ),
     );
@@ -490,46 +493,68 @@
 
   const handleProcessPages = async () => {
     if (!globalSetupState.imagesDirectory) return;
-    const selectedPages = renderState.selectedPages;
-    const newPreprocessPagesStage: PagePreprocessStage = {
+    const selectedPages = $state.snapshot(renderState.selectedPages);
+    const imagesDirectory = $state.snapshot(globalSetupState.imagesDirectory);
+    const dataDirectory = $state.snapshot(globalSetupState.dataDirectory);
+    const documentPath = $state.snapshot(renderState.documentPath);
+    const pagePreprocessStage: PagePreprocessStage = {
       id: uuidv4(),
       selectedPages,
-      imagesDirectory: globalSetupState.imagesDirectory,
-      status: "pending",
+      imagesDirectory,
+      dataDirectory,
       startTime: Date.now(),
     };
-    renderState.preprocessPagesStage = [
-      ...renderState.preprocessPagesStage,
-      newPreprocessPagesStage,
+    renderState.pagesProcessStage = [
+      ...renderState.pagesProcessStage,
+      pagePreprocessStage,
     ];
     renderState.selectedPages.splice(0, renderState.selectedPages.length);
 
     try {
       const preprocessPagesStateResult: PagePreprocessStageResult =
         await invoke("generate_file_name", {
-          selectedPages: newPreprocessPagesStage.selectedPages,
-          imagesDirectory: newPreprocessPagesStage.imagesDirectory,
+          pagePreprocessStage,
         });
 
       const preprocessPagesStageSuccess: PagePreprocessStageSuccess = {
-        ...newPreprocessPagesStage,
-        status: "completed",
+        ...pagePreprocessStage,
         endTime: Date.now(),
         elapsedTime: 0,
         preprocessPagesStageResult: preprocessPagesStateResult,
       };
 
-      const processDocumentStage: DocumentProcessStage = {
+      preprocessPagesStageSuccess.elapsedTime =
+        preprocessPagesStageSuccess.endTime -
+        preprocessPagesStageSuccess.startTime;
+
+      const fileName = preprocessPagesStateResult.suggested_file_name;
+
+      const documentProcessStage: DocumentProcessStage = {
         ...preprocessPagesStageSuccess,
-        fileName: preprocessPagesStateResult.suggestedFileName,
+        fileNameHistory: [fileName],
+        fileName,
+        documentPath: globalSetupState.documentClonePath,
       };
 
-      renderState.finishedDocumentsStage = [
-        ...renderState.finishedDocumentsStage,
-        processDocumentStage,
+      console.log("documentProcessStage:", documentProcessStage);
+
+      renderState.documentsProcessStage = [
+        ...renderState.documentsProcessStage,
+        documentProcessStage,
       ];
+
+      try {
+        const result = await invoke("process_document", {
+          documentProcessStage,
+        });
+        console.log("process_document:", result);
+      } catch (error) {
+        console.error("Error in process_document:", error);
+      }
+
+      console.log("generate_file_name:", preprocessPagesStateResult);
     } catch (error) {
-      console.error("Error in anthropic_pipeline:", error);
+      console.error("Error in generate_file_name:", error);
     }
 
     // invoke<PreprocessPagesStateJsonResult>("generate_file_name", {
@@ -594,7 +619,7 @@
     //   });
 
     console.log(
-      "Páginas em processamento: " + newPreprocessPagesStage.selectedPages,
+      "Páginas em processamento: " + pagePreprocessStage.selectedPages,
     );
   };
 
@@ -622,16 +647,38 @@
   }
 
   $effect(() => {
-    const documentPath = renderState.documentPath;
+    const documentPath = $state.snapshot(renderState.documentPath);
+    const imagesDirectory = $state.snapshot(globalSetupState.imagesDirectory);
+    const documentClonePath = $state.snapshot(
+      globalSetupState.documentClonePath,
+    );
+    const extractDocumentImagesStage: ExtactDocumentImagesStage = {
+      documentPath,
+      documentClonePath,
+      imagesDirectory,
+      startTime: Date.now(),
+    };
     if (!renderState.documentPath) return;
     loadDocument();
-    const result = invoke("extract_document_images", {
-      documentPath,
-      imagesDirectory: globalSetupState.imagesDirectory,
-    });
-    renderState.isExtractingImages = true;
 
-    console.log(result);
+    try {
+      renderState.isExtractingImages = true;
+      invoke<ExtactDocumentImagesStageSuccess>("extract_document_images", {
+        extractDocumentImagesStage,
+      }).then((result) => {
+        console.log("extract_document_images:", result);
+        // result.endTime = Date.now();
+        // result.elapsedTime = result.endTime - result.startTime;
+        // console.log("extract_document_images:", result);
+      });
+    } catch (e) {
+      console.error("Error in extract_document_images:", e);
+      // const error = e as ExtactDocumentImagesStageError;
+      // error.endTime = Date.now();
+      // error.elapsedTime = error.endTime - error.startTime;
+      // console.error("Error in extract_document_images:", error);
+    }
+
     return () => {
       globalSetupState.clearState().then(() => {
         console.log("State cleaned");
@@ -643,9 +690,9 @@
     if (!renderState.documentProxy || !validPageNumber) return;
     renderState.scale;
     renderState.rotation;
-    renderState.preprocessPagesStage.length;
+    renderState.pagesProcessStage.length;
     renderState.selectedPages.length;
-    renderState.finishedDocumentsStage.length;
+    renderState.finishedDocumentsProcessStage.length;
     renderState.pageNumber = validPageNumber;
     untrack(() => loadPageQueue(validPageNumber));
   });
@@ -654,14 +701,14 @@
     validPageNumber;
     return () => {
       tick().then(() => {
-        renderState.showStatusCanvas = true;
+        renderState.isShowStatusCanvas = true;
       });
     };
   });
 
   const toggleStatusCanvas = () => {
-    renderState.showStatusCanvas = !renderState.showStatusCanvas;
-    if (renderState.showStatusCanvas) {
+    renderState.isShowStatusCanvas = !renderState.isShowStatusCanvas;
+    if (renderState.isShowStatusCanvas) {
       loadPageQueue(validPageNumber);
     }
   };
@@ -670,10 +717,10 @@
 
   const isStatusToggleVisible = $derived(
     renderState.numPages &&
-      (renderState.processDocumentsStage.some((pd) =>
+      (renderState.documentsProcessStage.some((pd) =>
         pd.selectedPages.includes(validPageNumber),
       ) ||
-        renderState.finishedDocumentsStage.some((fd) =>
+        renderState.finishedDocumentsProcessStage.some((fd) =>
           fd.selectedPages.includes(validPageNumber),
         )),
   );
@@ -732,26 +779,10 @@
 `;
 
   let showShortcuts = $state(false);
+
   const toggleShortcuts = () => {
     showShortcuts = !showShortcuts;
   };
-
-  const forwardConsole = (
-    fnName: "log" | "debug" | "info" | "warn" | "error",
-    logger: (message: string) => Promise<void>,
-  ) => {
-    const original = console[fnName];
-    console[fnName] = (message) => {
-      original(message);
-      logger(message);
-    };
-  };
-
-  // forwardConsole("log", trace);
-  // forwardConsole("debug", debug);
-  // forwardConsole("info", info);
-  // forwardConsole("warn", warn);
-  // forwardConsole("error", error);
 
   const runProcessDocuments = async () => {
     try {
@@ -777,10 +808,13 @@
     const unsubscribe1 = listen("utility-stdout", (data) => {
       console.log("Utility stdout:", data.payload);
     });
-    const unsubscribe2 = listen("utility-stderr", (data) => {
-      console.error("Utility stderr:", data.payload);
+    const unsubscribe2 = listen("utility-terminated", (data) => {
+      console.log("Utility terminated:", data.payload);
     });
-    const unsubscribe3 = listen<ProgressUpdate>("progress", (data) => {
+    const unsubscribe3 = listen("utility-error", (data) => {
+      console.error("Utility error:", data.payload);
+    });
+    const unsubscribe4 = listen<ProgressUpdate>("progress", (data) => {
       console.log("Progress:", data.payload);
       const {
         pages_processed,
@@ -790,12 +824,13 @@
         total_document_pages,
       } = data.payload;
       console.log(
-        `Processed ${pages_processed}/${pages_to_process} pages. Estimated time remaining: ${estimated_seconds_remaining} seconds`
+        `Processed ${pages_processed}/${pages_to_process} pages. Estimated time remaining: ${estimated_seconds_remaining} seconds`,
       );
       renderState.extractedPages = extracted_page_numbers;
-      renderState.isExtractingImages = extracted_page_numbers.length !== total_document_pages;
+      renderState.isExtractingImages =
+        extracted_page_numbers.length !== total_document_pages;
     });
-    const unsubscribe4 = listen<number>("total-extracted-pages", (event) => {
+    const unsubscribe5 = listen<number>("total-extracted-pages", (event) => {
       console.log(`All ${event.payload} .webp files match the PDF pages.`);
       renderState.extractedPages = Array.from(
         { length: event.payload },
@@ -809,6 +844,7 @@
       unsubscribe2.then((unsubscribe2) => unsubscribe2());
       unsubscribe3.then((unsubscribe3) => unsubscribe3());
       unsubscribe4.then((unsubscribe4) => unsubscribe4());
+      unsubscribe5.then((unsubscribe5) => unsubscribe5());
     };
   });
 </script>
@@ -829,12 +865,14 @@
   <div
     class="grid h-full w-full place-items-center overflow-auto bg-accent focus:outline-none"
   >
-    {#if !isPageAvailable && renderState.isExtractingImages}
+    {#if validPageNumber && !isPageAvailable && renderState.isExtractingImages}
       <div
         class="absolute text-primary inset-0 flex flex-col items-center justify-center space-y-4 text-center bg-accent/80 z-10"
       >
         <Loader2 class="h-8 w-8 animate-spin" />
-        <p class="text-lg font-semibold">Extraindo imagem da página {validPageNumber}...</p>
+        <p class="text-lg font-semibold">
+          Extraindo imagem da página {validPageNumber}...
+        </p>
         <p class="text-sm text-muted-foreground">
           Por favor, aguarde. Isso pode levar alguns instantes.
         </p>
@@ -850,7 +888,7 @@
         <canvas
           bind:this={statusCanvas}
           class="pointer-events-none absolute left-0 top-0"
-          style="display: {renderState.showStatusCanvas ? 'block' : 'none'};"
+          style="display: {renderState.isShowStatusCanvas ? 'block' : 'none'};"
         ></canvas>
       </div>
       {#if isStatusToggleVisible}
@@ -859,11 +897,11 @@
           size="icon"
           class="toggle-status-button absolute top-1/2 -right-12 -translate-y-1/2 transform"
           onclick={toggleStatusCanvas}
-          aria-label={renderState.showStatusCanvas
+          aria-label={renderState.isShowStatusCanvas
             ? "Hide status overlay"
             : "Show status overlay"}
         >
-          {#if renderState.showStatusCanvas}
+          {#if renderState.isShowStatusCanvas}
             <EyeOff />
           {:else}
             <Eye />
@@ -938,7 +976,7 @@
   </Button>
 
   <div
-  class="absolute bottom-4 left-1/2 flex -translate-x-1/2 scale-90 transform items-center justify-center space-x-2 z-20"
+    class="absolute bottom-4 left-1/2 flex -translate-x-1/2 scale-90 transform items-center justify-center space-x-2 z-20"
   >
     <Button
       tabindex={-1}
@@ -972,7 +1010,8 @@
       tabindex={-1}
       size="icon"
       onclick={handleNextPage}
-      disabled={!renderState.numPages || renderState.pageNumber === renderState.numPages}
+      disabled={!renderState.numPages ||
+        renderState.pageNumber === renderState.numPages}
       aria-label="Next page"
     >
       <ArrowRight />
@@ -981,7 +1020,8 @@
       tabindex={-1}
       size="icon"
       onclick={handleLastPage}
-      disabled={!renderState.numPages || renderState.pageNumber === renderState.numPages}
+      disabled={!renderState.numPages ||
+        renderState.pageNumber === renderState.numPages}
       aria-label="Last page"
     >
       <ChevronLast />
@@ -994,7 +1034,7 @@
         tabindex={-1}
         disabled={!isPageAvailable ||
           renderState.selectedPages.length === 0 ||
-          renderState.preprocessPagesStage.some((pp) =>
+          renderState.pagesProcessStage.some((pp) =>
             pp.selectedPages.includes(renderState.pageNumber),
           )}
         class={buttonVariants({ size: "icon", className: "" })}
@@ -1034,13 +1074,13 @@
         handleSelectPage();
       }}
       disabled={!isPageAvailable ||
-        renderState.preprocessPagesStage.some((pp) =>
+        renderState.pagesProcessStage.some((pp) =>
           pp.selectedPages.includes(renderState.pageNumber),
         ) ||
-        renderState.processDocumentsStage.some((pp) =>
+        renderState.documentsProcessStage.some((pp) =>
           pp.selectedPages.includes(renderState.pageNumber),
         ) ||
-        renderState.finishedDocumentsStage.some((fd) =>
+        renderState.finishedDocumentsProcessStage.some((fd) =>
           fd.selectedPages.includes(renderState.pageNumber),
         )}
       aria-label={renderState.selectedPages.includes(renderState.pageNumber)

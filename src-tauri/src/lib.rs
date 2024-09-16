@@ -1,9 +1,10 @@
+mod models;
 mod extractor;
 mod processor;
 mod utilities;
-pub use utilities::call_utility;
+pub use utilities::{call_utility, call_utility2};
 use extractor::extract_document_images;
-// use processor::generate_file_name;
+use processor::{generate_file_name, process_document};
 // use llm::{anthropic_pipeline, update_file_name, rename_finished_document};
 // use processor::{final_pipeline, open_in_explorer};
 
@@ -22,7 +23,8 @@ pub fn run() {
             // open_in_explorer,
             // rename_finished_document
             extract_document_images,
-            // generate_file_name
+            generate_file_name,
+            process_document
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

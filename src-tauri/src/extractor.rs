@@ -1,3 +1,4 @@
+use super::models::workflows::{ExtractDocumentImagesStage, ProgressState};
 use crate::utilities::call_utility;
 use log::{debug, error, warn};
 use lopdf::Document;
@@ -7,14 +8,12 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
-        mpsc::channel,
         Arc, Mutex,
     },
     time::{Duration, Instant},
 };
 use sys_info;
 use tauri::{AppHandle, Emitter, Listener};
-use threadpool::ThreadPool;
 use tokio::time::timeout;
 
 const MIN_BATCH_SIZE: usize = 5;
@@ -24,35 +23,48 @@ const IMAGE_RESIZE: &str = "1500x1500";
 const MAX_RETRIES: usize = 3;
 const MAX_TIMEOUT: u64 = 60;
 
-#[derive(serde::Serialize, Clone, Debug)]
-struct ProgressUpdate {
-    pages_processed: usize,
-    pages_to_process: usize,
-    total_document_pages: usize,
-    estimated_seconds_remaining: u64,
-    extracted_page_numbers: Vec<usize>,
-}
-
 #[tauri::command]
 pub async fn extract_document_images(
     app: AppHandle,
-    document_path: PathBuf,
-    images_directory: PathBuf,
+    extract_document_images_stage: ExtractDocumentImagesStage,
 ) -> Result<String, String> {
-    let document = load_document(&document_path)?;
+    let ExtractDocumentImagesStage {
+        document_path,
+        document_clone_path,
+        images_directory,
+        start_time: _,
+    } = extract_document_images_stage;
+    debug!("document_clone_path: {:?}", document_clone_path);
+    fs::copy(&document_path, &document_clone_path).map_err(|e| {
+        error!("Failed to copy document to data directory: {}", e);
+        format!("Failed to copy document to data directory: {}", e)
+    })?;
+
+    let document = load_document(&document_clone_path)?;
     let total_pages = document.get_pages().len();
     let (missing_pages, extracted_pages) = get_missing_pages(&images_directory, total_pages)?;
 
     if missing_pages.is_empty() {
         app.emit("total-extracted-pages", total_pages)
-            .map_err(|e| format!("Failed to emit event: {}", e))?;
+            .map_err(|e| {
+                error!("Failed to emit total-extracted-pages event: {}", e);
+                format!("Failed to emit total-extracted-pages event: {}", e)
+            })?;
         return Ok(format!(
-            "All images already extracted. Found {} matching .webp files.",
+            "All images already extracted. Found {} matching the total number of pages in the document.",
             total_pages
         ));
     }
 
-    process_missing_pages(app, document_path, images_directory, missing_pages, extracted_pages, total_pages).await
+    process_missing_pages(
+        app,
+        document_clone_path,
+        images_directory,
+        missing_pages,
+        extracted_pages,
+        total_pages,
+    )
+    .await
 }
 
 fn load_document(document_path: &PathBuf) -> Result<Document, String> {
@@ -62,21 +74,32 @@ fn load_document(document_path: &PathBuf) -> Result<Document, String> {
     })
 }
 
-fn get_missing_pages(images_directory: &PathBuf, total_pages: usize) -> Result<(Vec<usize>, Vec<usize>), String> {
+fn get_missing_pages(
+    images_directory: &PathBuf,
+    total_pages: usize,
+) -> Result<(Vec<usize>, Vec<usize>), String> {
     let output_path = Path::new(images_directory);
     if !output_path.exists() {
-        fs::create_dir_all(images_directory)
-            .map_err(|e| format!("Failed to create output directory: {}", e))?;
+        fs::create_dir_all(images_directory).map_err(|e| {
+            error!("Failed to create output directory: {}", e);
+            format!("Failed to create output directory: {}", e)
+        })?;
         return Ok(((1..=total_pages).collect(), vec![]));
     }
 
     let webp_files: Vec<_> = fs::read_dir(output_path)
-        .map_err(|e| format!("Failed to read output directory: {}", e))?
+        .map_err(|e| {
+            error!("Failed to read output directory: {}", e);
+            format!("Failed to read output directory: {}", e)
+        })?
         .filter_map(|entry| {
             entry.ok().and_then(|e| {
                 let path = e.path();
                 if path.extension().and_then(|ext| ext.to_str()) == Some("webp") {
-                    path.file_stem().and_then(|s| s.to_str()).and_then(|s| s.parse::<usize>().ok())
+                    path.file_stem()
+                        .and_then(|s| s.to_str())
+                        .and_then(|s| s.parse::<usize>().ok())
+                        .map(|n| n + 1) // Adjust for 0-based indexing
                 } else {
                     None
                 }
@@ -85,10 +108,14 @@ fn get_missing_pages(images_directory: &PathBuf, total_pages: usize) -> Result<(
         .collect();
 
     let missing_pages: Vec<usize> = (1..=total_pages)
+        .into_par_iter()
         .filter(|&page| !webp_files.contains(&page))
         .collect();
 
-    let extracted_pages: Vec<usize> = webp_files.into_iter().filter(|&page| page <= total_pages).collect();
+    let extracted_pages: Vec<usize> = webp_files
+        .into_iter()
+        .filter(|&page| page <= total_pages)
+        .collect();
 
     Ok((missing_pages, extracted_pages))
 }
@@ -104,7 +131,7 @@ async fn process_missing_pages(
     let num_missing_pages = missing_pages.len();
     let progress = Arc::new(AtomicUsize::new(0));
     let failures = Arc::new(Mutex::new(Vec::new()));
-    let all_extracted_pages = Arc::new(Mutex::new(extracted_pages));
+    let all_extracted_pages = Arc::new(Mutex::new(extracted_pages.clone()));
     let start_time = Instant::now();
 
     let cancel_flag = Arc::new(AtomicBool::new(false));
@@ -116,57 +143,103 @@ async fn process_missing_pages(
     });
 
     let batch_size = get_adaptive_batch_size();
-    let pool = ThreadPool::new(batch_size);
-    let (tx, rx) = channel();
+    let batches: Vec<_> = missing_pages.chunks(batch_size).collect();
 
-    // Initial progress update
-    app.emit(
-        "progress",
-        ProgressUpdate {
-            pages_processed: 0,
-            pages_to_process: num_missing_pages,
-            total_document_pages: total_pages,
-            estimated_seconds_remaining: 0,
-            extracted_page_numbers: all_extracted_pages.lock().unwrap().clone(),
-        },
-    )
-    .map_err(|e| format!("Failed to emit initial progress event: {}", e))?;
+    let mut progress_state = ProgressState::new(total_pages);
+    progress_state.pages_to_process = num_missing_pages;
+    progress_state.extracted_page_numbers = extracted_pages.clone();
+    progress_state.update(0, num_missing_pages, start_time, extracted_pages, &app)?;
 
-    for batch in missing_pages.chunks(batch_size) {
+    for batch in batches {
         if cancel_flag.load(Ordering::SeqCst) {
-            debug!("Processing cancelled");
             break;
         }
 
-        process_batch(
+        let (successful_pages, failed_pages) = process_batch(
             &app,
             &document_path,
             &images_directory,
             batch,
             &progress,
             &cancel_flag,
-            &pool,
-            &tx,
-        );
+        )
+        .await?;
 
         handle_batch_results(
-            &rx,
-            batch.len(),
+            &successful_pages,
+            &failed_pages,
             &all_extracted_pages,
             &failures,
             &progress,
             &app,
             num_missing_pages,
-            total_pages,
             start_time,
+            &mut progress_state,
+            &images_directory,
         )?;
     }
 
-    pool.join();
-
     app.unlisten(cancel_listener);
 
-    finalize_processing(&app, &progress, &failures, num_missing_pages, total_pages, &cancel_flag)
+    finalize_processing(
+        &app,
+        &progress,
+        &failures,
+        num_missing_pages,
+        total_pages,
+        &cancel_flag,
+    )
+}
+
+async fn process_batch(
+    app: &AppHandle,
+    document_path: &PathBuf,
+    images_directory: &PathBuf,
+    batch: &[usize],
+    progress: &Arc<AtomicUsize>,
+    cancel_flag: &Arc<AtomicBool>,
+) -> Result<(Vec<usize>, Vec<usize>), String> {
+    for _ in 0..MAX_RETRIES {
+        if cancel_flag.load(Ordering::SeqCst) {
+            debug!("Batch processing cancelled");
+            return Ok((vec![], batch.to_vec()));
+        }
+
+        let page_spec = create_page_spec(batch);
+        let document_path_with_pages = format!("{}[{}]", document_path.display(), page_spec);
+
+        let args = vec![
+            "-density".to_owned(),
+            IMAGE_DENSITY.to_owned(),
+            document_path_with_pages,
+            "-resize".to_owned(),
+            IMAGE_RESIZE.to_owned(),
+            format!("{}\\index-%d.webp", images_directory.display()),
+        ];
+
+        println!("args: {:?}", args);
+
+        let result = match timeout(
+            Duration::from_secs(MAX_TIMEOUT),
+            call_utility(app.clone(), "magick.exe".to_owned(), args, false),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => {
+                warn!("Batch processing timed out");
+                false
+            }
+        };
+
+        if result {
+            progress.fetch_add(batch.len(), Ordering::SeqCst);
+            return Ok((batch.to_vec(), vec![]));
+        }
+    }
+
+    warn!("Failed to process batch after {} retries", MAX_RETRIES);
+    Ok((vec![], batch.to_vec()))
 }
 
 fn get_adaptive_batch_size() -> usize {
@@ -228,136 +301,115 @@ fn get_adaptive_batch_size() -> usize {
     clamped_batch_size
 }
 
-fn extract_page_images(
-    app: &AppHandle,
-    document_path: &PathBuf,
-    images_directory: &PathBuf,
-    page: usize,
-    progress: &Arc<AtomicUsize>,
-    cancel_flag: &Arc<AtomicBool>,
-) -> (usize, bool) {
-    for _ in 0..MAX_RETRIES {
-        if cancel_flag.load(Ordering::SeqCst) {
-            debug!("Page processing cancelled for page {}", page);
-            return (page, false);
-        }
+fn create_page_spec(pages: &[usize]) -> String {
+    let mut ranges = vec![];
+    let mut current_range = (pages[0], pages[0]);
 
-        let args = vec![
-            "-density".to_owned(),
-            IMAGE_DENSITY.to_owned(),
-            format!("{}[{}]", document_path.display(), page - 1),
-            "-resize".to_owned(),
-            IMAGE_RESIZE.to_owned(),
-            format!("{}\\{}.webp", images_directory.display(), page),
-        ];
-
-        let result = tauri::async_runtime::block_on(async {
-            match timeout(
-                Duration::from_secs(MAX_TIMEOUT),
-                call_utility(app.clone(), "magick.exe".to_owned(), args, false),
-            )
-            .await
-            {
-                Ok(result) => result,
-                Err(_) => {
-                    warn!("Page processing timed out for page {}", page);
-                    false
-                }
-            }
-        });
-
-        if result {
-            progress.fetch_add(1, Ordering::SeqCst);
-            return (page, true);
+    for &page in &pages[1..] {
+        if page == current_range.1 + 1 {
+            current_range.1 = page;
+        } else {
+            ranges.push(current_range);
+            current_range = (page, page);
         }
     }
+    ranges.push(current_range);
 
-    warn!(
-        "Failed to process page {} after {} retries",
-        page, MAX_RETRIES
-    );
-    (page, false)
-}
-
-fn process_batch(
-    app: &AppHandle,
-    document_path: &PathBuf,
-    images_directory: &PathBuf,
-    batch: &[usize],
-    progress: &Arc<AtomicUsize>,
-    cancel_flag: &Arc<AtomicBool>,
-    pool: &ThreadPool,
-    tx: &std::sync::mpsc::Sender<(usize, bool)>,
-) {
-    batch.par_iter().for_each(|&page| {
-        let app = app.clone();
-        let document_path = document_path.clone();
-        let images_directory = images_directory.clone();
-        let progress = Arc::clone(progress);
-        let cancel_flag = Arc::clone(cancel_flag);
-        let tx = tx.clone();
-
-        pool.execute(move || {
-            let result = extract_page_images(
-                &app,
-                &document_path,
-                &images_directory,
-                page,
-                &progress,
-                &cancel_flag,
-            );
-            tx.send(result).expect("Channel send failed");
-        });
-    });
+    ranges
+        .into_iter()
+        .map(|(start, end)| {
+            if start == end {
+                (start - 1).to_string()
+            } else {
+                format!("{}-{}", start - 1, end - 1)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 fn handle_batch_results(
-    rx: &std::sync::mpsc::Receiver<(usize, bool)>,
-    batch_size: usize,
+    successful_pages: &[usize],
+    failed_pages: &[usize],
     all_extracted_pages: &Arc<Mutex<Vec<usize>>>,
     failures: &Arc<Mutex<Vec<usize>>>,
     progress: &Arc<AtomicUsize>,
     app: &AppHandle,
     num_missing_pages: usize,
-    total_pages: usize,
     start_time: Instant,
+    progress_state: &mut ProgressState,
+    images_directory: &PathBuf,
 ) -> Result<(), String> {
-    for _ in 0..batch_size {
-        if let Ok((page, success)) = rx.recv() {
-            if success {
-                all_extracted_pages.lock().unwrap().push(page);
-            } else {
-                failures.lock().unwrap().push(page);
-            }
-        }
-    }
-
-    let current_progress = progress.load(Ordering::SeqCst);
-    let elapsed = start_time.elapsed().as_secs();
-    let estimated_total_seconds =
-        (elapsed as f64 / current_progress as f64) * num_missing_pages as f64;
-    let estimated_seconds_remaining = estimated_total_seconds as u64 - elapsed;
-
-    let mut all_extracted = all_extracted_pages.lock().unwrap().clone();
-    all_extracted.sort_unstable();
-
-    app.emit(
-        "progress",
-        ProgressUpdate {
-            pages_processed: current_progress,
-            pages_to_process: num_missing_pages,
-            total_document_pages: total_pages,
-            estimated_seconds_remaining,
-            extracted_page_numbers: all_extracted,
+    let (result1, result2) = rayon::join(
+        || {
+            all_extracted_pages
+                .lock()
+                .map_err(|e| {
+                    error!("Failed to lock all_extracted_pages: {}", e);
+                    format!("Failed to lock all_extracted_pages: {}", e)
+                })
+                .and_then(|mut pages| {
+                    pages.extend(successful_pages);
+                    pages.par_sort_unstable();
+                    Ok(())
+                })
         },
-    )
-    .map_err(|e| format!("Failed to emit progress event: {}", e))?;
-
-    debug!(
-        "Emitted progress: {}/{}, est. remaining: {} seconds",
-        current_progress, num_missing_pages, estimated_seconds_remaining
+        || {
+            failures
+                .lock()
+                .map_err(|e| {
+                    error!("Failed to lock failures: {}", e);
+                    format!("Failed to lock failures: {}", e)
+                })
+                .map(|mut fails| fails.extend(failed_pages))
+        },
     );
 
+    // Handle potential errors from both operations
+    result1?;
+    result2?;
+
+    let current_progress = progress.load(Ordering::SeqCst);
+    let all_extracted = all_extracted_pages
+        .lock()
+        .map_err(|e| {
+            error!("Failed to lock all_extracted_pages: {}", e);
+            format!("Failed to lock all_extracted_pages: {}", e)
+        })?
+        .clone();
+
+    if current_progress > 0 {
+        progress_state.update(
+            current_progress,
+            num_missing_pages,
+            start_time,
+            all_extracted.clone(),
+            app,
+        )?;
+
+        // Rename the extracted images
+        rename_extracted_images(successful_pages, images_directory)?;
+    }
+
+    Ok(())
+}
+
+fn rename_extracted_images(
+    successful_pages: &[usize],
+    images_directory: &PathBuf,
+) -> Result<(), String> {
+    for &page in successful_pages {
+        let old_name = images_directory.join(format!("index-{}.webp", page - 1));
+        let new_name = images_directory.join(format!("{}.webp", page));
+
+        if let Err(e) = fs::rename(&old_name, &new_name) {
+            error!(
+                "Failed to rename file from {:?} to {:?}: {}",
+                old_name, new_name, e
+            );
+            return Err(format!("Failed to rename file: {}", e));
+        }
+    }
     Ok(())
 }
 
@@ -374,7 +426,10 @@ fn finalize_processing(
     }
 
     let processed_pages = progress.load(Ordering::SeqCst);
-    let failures = failures.lock().unwrap();
+    let failures = failures.lock().map_err(|e| {
+        error!("Failed to lock failures: {}", e);
+        format!("Failed to lock failures: {}", e)
+    })?;
 
     if cancel_flag.load(Ordering::SeqCst) {
         Ok(format!(
