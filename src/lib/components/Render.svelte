@@ -41,11 +41,14 @@
     globalSetupState,
     type ExtactDocumentImagesStage,
     type ExtactDocumentImagesStageSuccess,
-    type ExtactDocumentImagesStageError,
     type PagePreprocessStageSuccess,
-    type PagePreprocessStageResult,
     type PagePreprocessStage,
     type DocumentProcessStage,
+    type DocumentProcessStageError,
+    type DocumentProcessStageSuccess,
+    type FinishedDocumentProcessStage,
+    type PagePreprocessStageError,
+    type inProcess,
   } from "./processWorkflowContext.svelte";
 
   interface ProgressUpdate {
@@ -124,13 +127,48 @@
     });
   };
 
+  const isPagePreprocessStage = (
+    process: inProcess,
+  ): process is PagePreprocessStage => {
+    return "selectedPages" in process && !("fileName" in process);
+  };
+
+  const isDocumentProcessStage = (
+    process: inProcess,
+  ): process is DocumentProcessStage => {
+    return "selectedPages" in process && "fileName" in process;
+  };
+
+  const isPagePreprocessStageSuccess = (
+    process: inProcess,
+  ): process is PagePreprocessStageSuccess => {
+    return "preprocessPagesStageResult" in process && !("fileName" in process);
+  };
+
+  const isDocumentProcessStageSuccess = (
+    process: inProcess,
+  ): process is DocumentProcessStageSuccess => {
+    return "preprocessPagesStageResult" in process && "fileName" in process;
+  };
+
+  const isPagePreprocessStageError = (
+    process: inProcess,
+  ): process is PagePreprocessStageError => {
+    return "errorMessage" in process && !("fileName" in process);
+  };
+
+  const isDocumentProcessStageError = (
+    process: inProcess,
+  ): process is DocumentProcessStageError => {
+    return "errorMessage" in process && "fileName" in process;
+  };
+
   const applyStatusCanvasStyles = (
     pageNumber: number,
     canvasContext: CanvasRenderingContext2D,
     viewportWidth: number,
     viewportHeight: number,
   ) => {
-    const fontSize = Math.min(viewportWidth, viewportHeight) * 0.07;
     canvasContext.clearRect(0, 0, viewportWidth, viewportHeight);
 
     let text: string;
@@ -143,30 +181,92 @@
         fd.selectedPages.includes(pageNumber),
       )
     ) {
-      text = `Página ${pageNumber} finalizada`;
+      text = `Página ${pageNumber}: Processamento concluído`;
+      bgColor = "rgba(128, 0, 128, 0.2)";
+      textColor = "rgba(76, 0, 76, 1)";
+      borderColor = "rgba(128, 0, 128, 1)";
+    } else if (
+      renderState.documentProcessStageSuccessList.some((pp) =>
+        pp.selectedPages.includes(pageNumber),
+      )
+    ) {
+      text = `Página ${pageNumber}: Documento gerado`;
       bgColor = "rgba(0, 128, 0, 0.2)";
-      textColor = "rgba(0, 100, 0, 1)";
+      textColor = "rgba(0, 76, 0, 1)";
       borderColor = "rgba(0, 128, 0, 1)";
     } else if (
-      renderState.documentsProcessStage.some((pp) =>
+      renderState.pageProcessStageSuccessList.some((pp) =>
         pp.selectedPages.includes(pageNumber),
       )
     ) {
-      text = `Página ${pageNumber} processada`;
-      bgColor = "rgba(186, 79, 125, 0.2)";
-      textColor = "rgba(156, 49, 95, 1)";
-      borderColor = "rgba(186, 79, 125, 1)";
+      text = `Página ${pageNumber}: Pré-processada`;
+      bgColor = "rgba(144, 238, 144, 0.2)";
+      textColor = "rgba(0, 100, 0, 1)";
+      borderColor = "rgba(144, 238, 144, 1)";
     } else if (
-      renderState.pagesProcessStage.some((pp) =>
+      renderState.documentProcessStageErrorList.some((pp) =>
         pp.selectedPages.includes(pageNumber),
       )
     ) {
-      text = `Página ${pageNumber} em processamento...`;
-      bgColor = "rgba(255, 223, 186, 0.5)";
-      textColor = "rgba(186, 79, 25, 1)";
-      borderColor = "rgba(255, 165, 0, 0.8)";
+      text = `Página ${pageNumber}: Erro na geração do documento`;
+      bgColor = "rgba(220, 20, 60, 0.2)";
+      textColor = "rgba(139, 0, 0, 1)";
+      borderColor = "rgba(220, 20, 60, 1)";
+    } else if (
+      renderState.pageProcessStageErrorList.some((pp) =>
+        pp.selectedPages.includes(pageNumber),
+      )
+    ) {
+      text = `Página ${pageNumber}: Erro no pré-processamento`;
+      bgColor = "rgba(255, 99, 71, 0.2)";
+      textColor = "rgba(178, 34, 34, 1)";
+      borderColor = "rgba(255, 99, 71, 1)";
+    } else if (
+      renderState.inProcessList.some((pp) =>
+        pp.selectedPages.includes(pageNumber),
+      )
+    ) {
+      const process = renderState.inProcessList.find((pp) =>
+        pp.selectedPages.includes(pageNumber),
+      );
+      if (isPagePreprocessStage(process!)) {
+        text = `Página ${pageNumber}: Pré-processando...`;
+        bgColor = "rgba(255, 255, 224, 0.2)";
+        textColor = "rgba(184, 134, 11, 1)";
+        borderColor = "rgba(255, 255, 224, 1)";
+      } else if (isDocumentProcessStage(process!)) {
+        text = `Página ${pageNumber}: Gerando documento...`;
+        bgColor = "rgba(255, 165, 0, 0.2)";
+        textColor = "rgba(210, 105, 30, 1)";
+        borderColor = "rgba(255, 165, 0, 1)";
+      } else if (isPagePreprocessStageSuccess(process!)) {
+        text = `Página ${pageNumber}: Pré-processamento concluído`;
+        bgColor = "rgba(152, 251, 152, 0.2)";
+        textColor = "rgba(0, 128, 0, 1)";
+        borderColor = "rgba(152, 251, 152, 1)";
+      } else if (isDocumentProcessStageSuccess(process!)) {
+        text = `Página ${pageNumber}: Documento gerado`;
+        bgColor = "rgba(0, 255, 127, 0.2)";
+        textColor = "rgba(0, 100, 0, 1)";
+        borderColor = "rgba(0, 255, 127, 1)";
+      } else if (isPagePreprocessStageError(process!)) {
+        text = `Página ${pageNumber}: Falha no pré-processamento`;
+        bgColor = "rgba(255, 182, 193, 0.2)";
+        textColor = "rgba(178, 34, 34, 1)";
+        borderColor = "rgba(255, 182, 193, 1)";
+      } else if (isDocumentProcessStageError(process!)) {
+        text = `Página ${pageNumber}: Falha na geração do documento`;
+        bgColor = "rgba(255, 99, 71, 0.2)";
+        textColor = "rgba(139, 0, 0, 1)";
+        borderColor = "rgba(255, 99, 71, 1)";
+      } else {
+        text = `Página ${pageNumber}: Processando...`;
+        bgColor = "rgba(135, 206, 250, 0.2)";
+        textColor = "rgba(30, 144, 255, 1)";
+        borderColor = "rgba(135, 206, 250, 1)";
+      }
     } else if (renderState.selectedPages.includes(pageNumber)) {
-      text = `Página ${pageNumber} selecionada`;
+      text = `Página ${pageNumber}: Selecionada`;
       bgColor = "rgba(173, 216, 230, 0.5)";
       textColor = "rgba(0, 90, 156, 1)";
       borderColor = "rgba(70, 130, 180, 0.8)";
@@ -174,8 +274,15 @@
       return;
     }
 
+    let fontSize = Math.min(viewportWidth, viewportHeight) * 0.07;
     canvasContext.font = `bold ${fontSize}px Arial`;
-    const textWidth = canvasContext.measureText(text).width;
+    let textWidth = canvasContext.measureText(text).width;
+    while (textWidth > viewportWidth * 0.9 && fontSize > 10) {
+      fontSize -= 1;
+      canvasContext.font = `bold ${fontSize}px Arial`;
+      textWidth = canvasContext.measureText(text).width;
+    }
+
     const x = (viewportWidth - textWidth) / 2;
     const y = (viewportHeight + fontSize) / 2 - fontSize / 2;
 
@@ -304,10 +411,10 @@
   const handleSelectPage = () => {
     if (!renderState.extractedPages.includes(validPageNumber)) return;
     if (
-      renderState.pagesProcessStage.some((pp) =>
+      renderState.pageProcessStageSuccessList.some((pp) =>
         pp.selectedPages.includes(validPageNumber),
       ) ||
-      renderState.documentsProcessStage.some((pp) =>
+      renderState.documentProcessStageSuccessList.some((pp) =>
         pp.selectedPages.includes(validPageNumber),
       ) ||
       renderState.finishedDocumentsProcessStage.some((pp) =>
@@ -336,10 +443,13 @@
     const currentIndex = renderState.selectedPages.indexOf(pageNumber);
     const availablePages = renderState.extractedPages.filter(
       (page) =>
-        !renderState.pagesProcessStage.some((pp) =>
+        !renderState.inProcessList.some((pp) =>
           pp.selectedPages.includes(page),
         ) &&
-        !renderState.documentsProcessStage.some((pp) =>
+        !renderState.pageProcessStageSuccessList.some((pp) =>
+          pp.selectedPages.includes(page),
+        ) &&
+        !renderState.documentProcessStageSuccessList.some((pp) =>
           pp.selectedPages.includes(page),
         ) &&
         !renderState.finishedDocumentsProcessStage.some((pp) =>
@@ -496,131 +606,86 @@
     const selectedPages = $state.snapshot(renderState.selectedPages);
     const imagesDirectory = $state.snapshot(globalSetupState.imagesDirectory);
     const dataDirectory = $state.snapshot(globalSetupState.dataDirectory);
-    const documentPath = $state.snapshot(renderState.documentPath);
     const pagePreprocessStage: PagePreprocessStage = {
       id: uuidv4(),
       selectedPages,
       imagesDirectory,
       dataDirectory,
-      startTime: Date.now(),
     };
-    renderState.pagesProcessStage = [
-      ...renderState.pagesProcessStage,
+    renderState.inProcessList = [
+      ...renderState.inProcessList,
       pagePreprocessStage,
     ];
     renderState.selectedPages.splice(0, renderState.selectedPages.length);
 
     try {
-      const preprocessPagesStateResult: PagePreprocessStageResult =
+      const pagePreprocessStageSuccess: PagePreprocessStageSuccess =
         await invoke("generate_file_name", {
           pagePreprocessStage,
         });
 
-      const preprocessPagesStageSuccess: PagePreprocessStageSuccess = {
-        ...pagePreprocessStage,
-        endTime: Date.now(),
-        elapsedTime: 0,
-        preprocessPagesStageResult: preprocessPagesStateResult,
-      };
+      const fileName =
+        pagePreprocessStageSuccess.preprocessPagesStageResult
+          .suggested_file_name;
 
-      preprocessPagesStageSuccess.elapsedTime =
-        preprocessPagesStageSuccess.endTime -
-        preprocessPagesStageSuccess.startTime;
-
-      const fileName = preprocessPagesStateResult.suggested_file_name;
+      renderState.inProcessList = renderState.inProcessList.filter(
+        (pp) => pp.id !== pagePreprocessStageSuccess.id,
+      );
 
       const documentProcessStage: DocumentProcessStage = {
-        ...preprocessPagesStageSuccess,
-        fileNameHistory: [fileName],
+        ...pagePreprocessStageSuccess,
         fileName,
         documentPath: globalSetupState.documentClonePath,
       };
 
-      console.log("documentProcessStage:", documentProcessStage);
-
-      renderState.documentsProcessStage = [
-        ...renderState.documentsProcessStage,
+      renderState.inProcessList = [
+        ...renderState.inProcessList,
         documentProcessStage,
       ];
 
       try {
-        const result = await invoke("process_document", {
-          documentProcessStage,
-        });
-        console.log("process_document:", result);
-      } catch (error) {
-        console.error("Error in process_document:", error);
+        const result: DocumentProcessStageSuccess = await invoke(
+          "process_document",
+          {
+            documentProcessStage,
+          },
+        );
+
+        renderState.inProcessList = renderState.inProcessList.filter(
+          (pp) => pp.id !== result.id,
+        );
+
+        const finishedDocumentProcessStage: FinishedDocumentProcessStage = {
+          ...result,
+          fileNameHistory: [result.fileName],
+        };
+
+        renderState.finishedDocumentsProcessStage = [
+          ...renderState.finishedDocumentsProcessStage,
+          finishedDocumentProcessStage,
+        ];
+      } catch (e) {
+        const error = e as DocumentProcessStageError;
+        renderState.inProcessList = renderState.inProcessList.filter(
+          (pp) => pp.id !== error.id,
+        );
+        renderState.documentProcessStageErrorList = [
+          ...renderState.documentProcessStageErrorList,
+          error,
+        ];
       }
 
-      console.log("generate_file_name:", preprocessPagesStateResult);
-    } catch (error) {
-      console.error("Error in generate_file_name:", error);
+      console.log("Generate file name success:", pagePreprocessStageSuccess);
+    } catch (e) {
+      const error = e as PagePreprocessStageError;
+      renderState.inProcessList = renderState.inProcessList.filter(
+        (pp) => pp.id !== error.id,
+      );
+      renderState.pageProcessStageErrorList = [
+        ...renderState.pageProcessStageErrorList,
+        error,
+      ];
     }
-
-    // invoke<PreprocessPagesStateJsonResult>("generate_file_name", {
-    //   imagesDirectory,
-    //   promptFile: PROMPT_FILE_PATH,
-    // })
-    //   .then(async (res) => {
-    //     let suggestedFileName = "";
-
-    //     try {
-    //       const jsonContent = await readFile(jsonOutputPath);
-    //       const jsonString = new TextDecoder().decode(jsonContent);
-    //       const jsonData = JSON.parse(jsonString);
-    //       suggestedFileName = jsonData.suggestedFileName || "";
-    //     } catch (error) {
-    //       console.error("Error reading JSON file:", error);
-    //     }
-
-    //     const proprocessPagesStageSuccess: PreprocessPagesStageSuccess = {
-    //         ...newProcess,
-    //         status: "completed",
-    //         endTime: Date.now(),
-    //         elapsedTime: 0,
-    //         preprocessPagesStageJsonResult: {
-    //             ...res,
-    //         },
-    //     };
-    //     proprocessPagesStageSuccess.elapsedTime = proprocessPagesStageSuccess.endTime - proprocessPagesStageSuccess.startTime;
-
-    //     const processDocumentStage: ProcessDocumentStage = {
-    //       ...proprocessPagesStageSuccess,
-    //       fileName: suggestedFileName,
-    //       jsonOutputPath,
-    //     };
-
-    //     processWorkflowState.finishedDocumentsStage = [
-    //       ...processWorkflowState.finishedDocumentsStage,
-    //       processDocumentStage,
-    //     ];
-    //     processWorkflowState.processDocumentsStage =
-    //       processWorkflowState.processDocumentsStage.filter(
-    //         (pp) => pp.id !== newProcess.id,
-    //       );
-    //   })
-    //   .catch((err) => {
-    //     console.error("Error in anthropic_pipeline:", err);
-    //     const errorProcessedDocument: PreprocessPagesStageError = {
-    //       ...newProcess,
-    //       status: "error",
-    //       endTime: Date.now(),
-    //       elapsedTime: 0,
-    //       errorMessage: err.toString(),
-    //     };
-    //     processWorkflowState.finishedDocumentsStage = [
-    //       ...processWorkflowState.finishedDocumentsStage,
-    //       errorProcessedDocument,
-    //     ];
-    //     processWorkflowState.processDocumentsStage =
-    //       processWorkflowState.processDocumentsStage.filter(
-    //         (pp) => pp.id !== newProcess.id,
-    //       );
-    //   });
-
-    console.log(
-      "Páginas em processamento: " + pagePreprocessStage.selectedPages,
-    );
   };
 
   const selectedPagesText = $derived.by(() => {
@@ -656,7 +721,6 @@
       documentPath,
       documentClonePath,
       imagesDirectory,
-      startTime: Date.now(),
     };
     if (!renderState.documentPath) return;
     loadDocument();
@@ -690,7 +754,7 @@
     if (!renderState.documentProxy || !validPageNumber) return;
     renderState.scale;
     renderState.rotation;
-    renderState.pagesProcessStage.length;
+    renderState.inProcessList.length;
     renderState.selectedPages.length;
     renderState.finishedDocumentsProcessStage.length;
     renderState.pageNumber = validPageNumber;
@@ -717,8 +781,8 @@
 
   const isStatusToggleVisible = $derived(
     renderState.numPages &&
-      (renderState.documentsProcessStage.some((pd) =>
-        pd.selectedPages.includes(validPageNumber),
+      (renderState.inProcessList.some((ip) =>
+        ip.selectedPages.includes(validPageNumber),
       ) ||
         renderState.finishedDocumentsProcessStage.some((fd) =>
           fd.selectedPages.includes(validPageNumber),
@@ -1034,8 +1098,8 @@
         tabindex={-1}
         disabled={!isPageAvailable ||
           renderState.selectedPages.length === 0 ||
-          renderState.pagesProcessStage.some((pp) =>
-            pp.selectedPages.includes(renderState.pageNumber),
+          renderState.inProcessList.some((ip) =>
+            ip.selectedPages.includes(renderState.pageNumber),
           )}
         class={buttonVariants({ size: "icon", className: "" })}
         aria-label="Process selected pages"
@@ -1074,14 +1138,23 @@
         handleSelectPage();
       }}
       disabled={!isPageAvailable ||
-        renderState.pagesProcessStage.some((pp) =>
-          pp.selectedPages.includes(renderState.pageNumber),
+        renderState.inProcessList.some((ipl) =>
+          ipl.selectedPages.includes(renderState.pageNumber),
         ) ||
-        renderState.documentsProcessStage.some((pp) =>
-          pp.selectedPages.includes(renderState.pageNumber),
+        renderState.pageProcessStageSuccessList.some((pps) =>
+          pps.selectedPages.includes(renderState.pageNumber),
         ) ||
-        renderState.finishedDocumentsProcessStage.some((fd) =>
-          fd.selectedPages.includes(renderState.pageNumber),
+        renderState.documentProcessStageErrorList.some((dpe) =>
+          dpe.selectedPages.includes(renderState.pageNumber),
+        ) ||
+        renderState.documentProcessStageSuccessList.some((dps) =>
+          dps.selectedPages.includes(renderState.pageNumber),
+        ) ||
+        renderState.documentProcessStageErrorList.some((dpe) =>
+          dpe.selectedPages.includes(renderState.pageNumber),
+        ) ||
+        renderState.finishedDocumentsProcessStage.some((fdps) =>
+          fdps.selectedPages.includes(renderState.pageNumber),
         )}
       aria-label={renderState.selectedPages.includes(renderState.pageNumber)
         ? "Deselect page"

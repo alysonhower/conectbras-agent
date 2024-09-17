@@ -1,5 +1,5 @@
-use std::{path::PathBuf, time::Instant, fs::create_dir_all};
 use log::{debug, error};
+use std::{fs::create_dir_all, path::PathBuf, time::Instant};
 use tauri::{AppHandle, Emitter};
 
 use super::workflows::*;
@@ -16,7 +16,8 @@ impl PagePreprocessStage {
             .collect()
     }
     pub fn get_document_directory(&self) -> PathBuf {
-        let page_numbers = self.selected_pages
+        let page_numbers = self
+            .selected_pages
             .iter()
             .map(|&num| num.to_string())
             .collect::<Vec<String>>()
@@ -28,10 +29,6 @@ impl PagePreprocessStage {
         document_directory
     }
 }
-
-// impl DocumentProcessStage {
-    
-// }
 
 impl ProgressState {
     pub fn new(total_document_pages: usize) -> Self {
@@ -68,11 +65,10 @@ impl ProgressState {
 
         self.extracted_page_numbers = all_extracted;
 
-        app.emit("progress", self.clone())
-            .map_err(|e| {
-                error!("Failed to emit progress event: {}", e);
-                format!("Failed to emit progress event: {}", e)
-            })?;
+        app.emit("progress", self.clone()).map_err(|e| {
+            error!("Failed to emit progress event: {}", e);
+            format!("Failed to emit progress event: {}", e)
+        })?;
 
         debug!(
             "Emitted progress: {}/{}, est. remaining: {} seconds",

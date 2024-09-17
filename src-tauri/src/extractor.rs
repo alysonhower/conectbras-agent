@@ -1,10 +1,11 @@
+// use super::models::workflows::{ExtractDocumentImagesStage, ExtractDocumentImagesStageSuccess, ExtractDocumentImagesStageError, ProgressState};
 use super::models::workflows::{ExtractDocumentImagesStage, ProgressState};
 use crate::utilities::call_utility;
 use log::{debug, error, warn};
 use lopdf::Document;
 use rayon::prelude::*;
 use std::{
-    fs,
+    fs::{self, copy, create_dir_all},
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -32,10 +33,13 @@ pub async fn extract_document_images(
         document_path,
         document_clone_path,
         images_directory,
-        start_time: _,
     } = extract_document_images_stage;
-    debug!("document_clone_path: {:?}", document_clone_path);
-    fs::copy(&document_path, &document_clone_path).map_err(|e| {
+    create_dir_all(&images_directory).map_err(|e| {
+        error!("Failed to create output directory: {}", e);
+        format!("Failed to create output directory: {}", e)
+    })?;
+
+    copy(&document_path, &document_clone_path).map_err(|e| {
         error!("Failed to copy document to data directory: {}", e);
         format!("Failed to copy document to data directory: {}", e)
     })?;

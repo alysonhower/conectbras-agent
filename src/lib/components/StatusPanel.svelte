@@ -24,7 +24,7 @@
     type PagePreprocessStage,
     type DocumentProcessStage,
     type FinishedDocumentProcessStage,
-    type ProcessErrorStage,
+    type PagePreprocessStageError,
     type PagePreprocessStageSuccess,
   } from "./processWorkflowContext.svelte";
 
@@ -77,7 +77,7 @@
     | (PagePreprocessStage & { listType: "pageProcessStage" })
     | (DocumentProcessStage & { listType: "documentProcessStage" })
     | (FinishedDocumentProcessStage & { listType: "finishedDocumentStage" })
-    | (ProcessErrorStage & { listType: "processError" });
+    | (PagePreprocessStageError & { listType: "pageProcessStageError" });
 
   const allDocuments = $derived(
     [
@@ -93,9 +93,9 @@
         ...doc,
         listType: "finishedDocumentStage" as const,
       })),
-      ...renderState.processErrors.map((doc) => ({
+      ...renderState.pagesProcessStageErrors.map((doc) => ({
         ...doc,
-        listType: "processError" as const,
+        listType: "pageProcessStageError" as const,
       })),
     ].sort(
       (a, b) => Math.min(...a.selectedPages) - Math.min(...b.selectedPages),
@@ -331,7 +331,6 @@
 
     const pageProcessStage: PagePreprocessStage = {
       id: uuidv4(),
-      documentPath: document.documentPath,
       dataDirectory: document.dataDirectory,
       imagesDirectory: document.imagesDirectory,
       selectedPages: document.selectedPages,
@@ -365,6 +364,7 @@
         ...pageProcessStageSuccess,
         fileName: preprocessPagesStateResult.suggested_file_name,
         fileNameHistory: [preprocessPagesStateResult.suggested_file_name],
+        documentPath: document.documentPath,
       };
 
       renderState.documentsProcessStage = [
@@ -462,7 +462,7 @@
                 )}):
               {/if}
             </span>
-            {#if document.listType !== "pageProcessStage" && document.listType !== "processError"}
+            {#if document.listType !== "pageProcessStage" && document.listType !== "pageProcessStageError"}
               {#if statusPanel.editingDocumentId === document.id}
                 <div class="w-full h-full space-y-1">
                   <!-- svelte-ignore a11y_autofocus -->
@@ -685,7 +685,7 @@
               {formatPagesText(document.selectedPages)}
             </p>
           {/if}
-          {#if document.listType === "processError"}
+          {#if document.listType === "pageProcessStageError"}
             <p class="text-red-500">
               <span class="font-semibold">Erro:</span>
               {document.errorMessage}
@@ -694,7 +694,8 @@
               size="sm"
               variant="outline"
               onclick={() =>
-                document.listType === "processError" && handleRetry(document)}
+                document.listType === "pageProcessStageError" &&
+                handleRetry(document)}
               class="mt-2"
             >
               <RefreshCw class="h-3.5 w-3.5 mr-1" />
@@ -723,7 +724,7 @@
                 {document.listType === "documentProcessStage" &&
                   new Date(document.endTime).toLocaleString()}
               </p>
-              {#if document.listType === "processError"}
+              {#if document.listType === "pageProcessStageError"}
                 <p class="text-red-500">
                   <span class="font-semibold">Erro:</span>
                   {document.errorMessage}

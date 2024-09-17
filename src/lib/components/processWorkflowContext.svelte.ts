@@ -4,20 +4,15 @@ export interface ExtactDocumentImagesStage {
   documentPath: string;
   documentClonePath: string;
   imagesDirectory: string;
-  startTime: number;
 }
 
 export interface ExtactDocumentImagesStageSuccess
   extends ExtactDocumentImagesStage {
-  endTime: number;
-  elapsedTime: number;
   documentClonePath: string;
 }
 
 export interface ExtactDocumentImagesStageError
   extends ExtactDocumentImagesStage {
-  endTime: number;
-  elapsedTime: number;
   errorMessage: string;
 }
 
@@ -26,7 +21,6 @@ export interface PagePreprocessStage {
   selectedPages: number[];
   dataDirectory: string;
   imagesDirectory: string;
-  startTime: number;
 }
 
 export interface PagePreprocessStageResult {
@@ -41,24 +35,36 @@ export interface PagePreprocessStageResult {
 }
 
 export interface PagePreprocessStageSuccess extends PagePreprocessStage {
-  endTime: number;
-  elapsedTime: number;
   preprocessPagesStageResult: PagePreprocessStageResult;
+}
+
+export interface PagePreprocessStageError extends PagePreprocessStage {
+  errorMessage: string;
 }
 
 export interface DocumentProcessStage extends PagePreprocessStageSuccess {
   documentPath: string;
   fileName: string;
-  fileNameHistory: string[];
 }
 
-export interface PagePreprocessStageError extends PagePreprocessStage {
-  endTime: number;
-  elapsedTime: number;
+export interface DocumentProcessStageSuccess extends DocumentProcessStage {}
+
+export interface DocumentProcessStageError extends DocumentProcessStage {
   errorMessage: string;
 }
 
-export interface FinishedDocumentProcessStage extends DocumentProcessStage {}
+export interface FinishedDocumentProcessStage
+  extends DocumentProcessStageSuccess {
+  fileNameHistory: string[];
+}
+
+export type inProcess =
+  | PagePreprocessStage
+  | DocumentProcessStage
+  | PagePreprocessStageSuccess
+  | DocumentProcessStageSuccess
+  | PagePreprocessStageError
+  | DocumentProcessStageError;
 
 interface SetupState {
   documentPath: string;
@@ -78,10 +84,12 @@ interface SetupState {
   isExtractingImages: boolean;
   extractedPages: number[];
   selectedPages: number[];
-  pagesProcessStage: PagePreprocessStage[];
-  documentsProcessStage: DocumentProcessStage[];
+  inProcessList: inProcess[];
+  pageProcessStageSuccessList: PagePreprocessStageSuccess[];
+  pageProcessStageErrorList: PagePreprocessStageError[];
+  documentProcessStageSuccessList: DocumentProcessStageSuccess[];
+  documentProcessStageErrorList: DocumentProcessStageError[];
   finishedDocumentsProcessStage: FinishedDocumentProcessStage[];
-  processErrors: PagePreprocessStageError[];
 }
 
 class GlobalSetupState {
@@ -103,10 +111,12 @@ class GlobalSetupState {
     isShowShortcuts: false,
     extractedPages: [],
     selectedPages: [],
-    pagesProcessStage: [],
-    documentsProcessStage: [],
+    inProcessList: [],
+    pageProcessStageSuccessList: [],
+    pageProcessStageErrorList: [],
+    documentProcessStageSuccessList: [],
+    documentProcessStageErrorList: [],
     finishedDocumentsProcessStage: [],
-    processErrors: [],
   });
 
   constructor(documentPath: string) {
@@ -154,10 +164,12 @@ class GlobalSetupState {
     this.state.isExtractingImages = false;
     this.state.extractedPages = [];
     this.state.selectedPages = [];
-    this.state.pagesProcessStage = [];
-    this.state.documentsProcessStage = [];
+    this.state.inProcessList = [];
+    this.state.pageProcessStageSuccessList = [];
+    this.state.pageProcessStageErrorList = [];
+    this.state.documentProcessStageSuccessList = [];
+    this.state.documentProcessStageErrorList = [];
     this.state.finishedDocumentsProcessStage = [];
-    this.state.processErrors = [];
   }
 }
 
