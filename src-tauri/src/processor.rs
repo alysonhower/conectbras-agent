@@ -4,24 +4,26 @@ use std::path::Path;
 use tauri::AppHandle;
 
 use super::models::workflows::{
-    DocumentProcessStage, DocumentProcessStageSuccess, DocumentProcessStageError, PagePreprocessStage, PagePreprocessStageError, PagePreprocessStageResult, PagePreprocessStageSuccess,
+    DocumentProcessStage, DocumentProcessStageError, DocumentProcessStageSuccess,
+    PagePreprocessStage, PagePreprocessStageError, PagePreprocessStageResult,
+    PagePreprocessStageSuccess,
 };
 use super::{call_utility, call_utility2};
 
 #[tauri::command]
-pub async fn generate_file_name(
+pub async fn run_page_preprocess_stage(
     handle: AppHandle,
     page_preprocess_stage: PagePreprocessStage,
 ) -> Result<PagePreprocessStageSuccess, PagePreprocessStageError> {
     let pages_paths = page_preprocess_stage.get_pages_paths();
-    let document_directory = page_preprocess_stage.get_document_directory();
+    let preprocessed_pages_directory = page_preprocess_stage.get_preprocessed_pages_directory();
     for page_path in pages_paths.clone() {
         let file_name = page_path
             .file_name()
             .unwrap()
             .to_string_lossy()
             .into_owned();
-        let destination_path = document_directory.join(file_name);
+        let destination_path = preprocessed_pages_directory.join(file_name);
         fs::copy(page_path, destination_path).map_err(|e| PagePreprocessStageError {
             id: page_preprocess_stage.id.clone(),
             data_directory: page_preprocess_stage.data_directory.clone(),
@@ -32,7 +34,7 @@ pub async fn generate_file_name(
     }
     let args = vec![
         "--input".to_owned(),
-        document_directory.display().to_string(),
+        preprocessed_pages_directory.display().to_string(),
     ];
     let result = call_utility2(handle.clone(), "filenamegen".to_owned(), args, true).await;
 
@@ -78,7 +80,7 @@ pub async fn generate_file_name(
                     error_message: e.to_string(),
                 })?;
 
-            let result_file_path = document_directory.join("result.json");
+            let result_file_path = preprocessed_pages_directory.join("result.json");
             fs::write(&result_file_path, json_str).map_err(|e| PagePreprocessStageError {
                 id: page_preprocess_stage.id.clone(),
                 data_directory: page_preprocess_stage.data_directory.clone(),
@@ -91,11 +93,8 @@ pub async fn generate_file_name(
                 id: page_preprocess_stage.id,
                 selected_pages: page_preprocess_stage.selected_pages,
                 data_directory: page_preprocess_stage.data_directory,
-                images_directory: page_preprocess_stage
-                    .images_directory
-                    .to_string_lossy()
-                    .to_string(),
-                preprocess_pages_stage_result: preprocess_result,
+                images_directory: page_preprocess_stage.images_directory,
+                page_preprocess_stage_result: preprocess_result,
             })
         }
         Err(e) => Err(PagePreprocessStageError {
@@ -109,12 +108,12 @@ pub async fn generate_file_name(
 }
 
 #[tauri::command]
-pub async fn process_document(
+pub async fn run_document_process_stage(
     handle: AppHandle,
     document_process_stage: DocumentProcessStage,
 ) -> Result<DocumentProcessStageSuccess, DocumentProcessStageError> {
     let file_name = document_process_stage
-        .preprocess_pages_stage_result
+        .page_preprocess_stage_result
         .suggested_file_name
         .clone();
     let input_path = document_process_stage.document_path.clone();
@@ -132,14 +131,20 @@ pub async fn process_document(
             selected_pages: document_process_stage.selected_pages.clone(),
             data_directory: document_process_stage.data_directory.clone(),
             images_directory: document_process_stage.images_directory.clone(),
-            preprocess_pages_stage_result: document_process_stage.preprocess_pages_stage_result.clone(),
+            page_preprocess_stage_result: document_process_stage
+                .page_preprocess_stage_result
+                .clone(),
             document_path: document_process_stage.document_path.clone(),
             file_name: document_process_stage.file_name.clone(),
             error_message: format!("Failed to create output directory: {}", e),
         })?;
     }
-    let output_path = output_dir.join(&file_name).with_extension("pdf");
-    
+    let output_path = output_dir
+        .join(&file_name)
+        .with_extension("pdf")
+        .display()
+        .to_string();
+
     // QPDF utility call
     let is_success = call_utility(
         handle.clone(),
@@ -147,10 +152,10 @@ pub async fn process_document(
         vec![
             "--empty".to_owned(),
             "--pages".to_owned(),
-            input_path.clone(),
+            input_path,
             pages_to_process,
             "--".to_owned(),
-            output_path.to_string_lossy().to_string(),
+            output_path.clone(),
         ],
         false,
     )
@@ -162,7 +167,7 @@ pub async fn process_document(
             selected_pages: document_process_stage.selected_pages,
             data_directory: document_process_stage.data_directory,
             images_directory: document_process_stage.images_directory,
-            preprocess_pages_stage_result: document_process_stage.preprocess_pages_stage_result,
+            page_preprocess_stage_result: document_process_stage.page_preprocess_stage_result,
             document_path: document_process_stage.document_path,
             file_name: document_process_stage.file_name,
             error_message: "Failed to call QPDF utility".to_string(),
@@ -184,8 +189,8 @@ pub async fn process_document(
             "--clean".to_owned(),
             "--output-type".to_owned(),
             "pdfa-2".to_owned(),
-            output_path.to_string_lossy().to_string(),
-            output_path.to_string_lossy().to_string(),
+            output_path.clone(),
+            output_path.clone(),
         ],
         false,
     )
@@ -197,7 +202,7 @@ pub async fn process_document(
             selected_pages: document_process_stage.selected_pages,
             data_directory: document_process_stage.data_directory,
             images_directory: document_process_stage.images_directory,
-            preprocess_pages_stage_result: document_process_stage.preprocess_pages_stage_result,
+            page_preprocess_stage_result: document_process_stage.page_preprocess_stage_result,
             document_path: document_process_stage.document_path,
             file_name: document_process_stage.file_name,
             error_message: "Failed to call OCRmyPDF utility".to_string(),
@@ -209,8 +214,8 @@ pub async fn process_document(
         selected_pages: document_process_stage.selected_pages,
         data_directory: document_process_stage.data_directory,
         images_directory: document_process_stage.images_directory,
-        preprocess_pages_stage_result: document_process_stage.preprocess_pages_stage_result,
-        document_path: output_path.to_string_lossy().to_string(),
+        page_preprocess_stage_result: document_process_stage.page_preprocess_stage_result,
+        document_path: output_path,
         file_name,
     })
 }

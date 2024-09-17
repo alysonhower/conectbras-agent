@@ -25,28 +25,37 @@ const MAX_RETRIES: usize = 3;
 const MAX_TIMEOUT: u64 = 60;
 
 #[tauri::command]
-pub async fn extract_document_images(
+pub async fn run_extract_document_images_stage(
     app: AppHandle,
     extract_document_images_stage: ExtractDocumentImagesStage,
 ) -> Result<String, String> {
-    let ExtractDocumentImagesStage {
-        document_path,
-        document_clone_path,
-        images_directory,
-    } = extract_document_images_stage;
+    debug!(
+        "extract_document_images_stage: {:?}",
+        extract_document_images_stage
+    );
+    let document_path = PathBuf::from(&extract_document_images_stage.document_path);
+    let document_name = document_path.file_name().unwrap();
+    let data_directory = PathBuf::from(&extract_document_images_stage.data_directory);
+    let document_clone_path = data_directory.join(document_name);
+    let documents_directory = data_directory.join("documents");
+    create_dir_all(&documents_directory).map_err(|e| {
+        error!("Failed to create data directory: {}", e);
+        format!("Failed to create data directory: {}", e)
+    })?;
+    let images_directory = PathBuf::from(&extract_document_images_stage.images_directory);
     create_dir_all(&images_directory).map_err(|e| {
         error!("Failed to create output directory: {}", e);
         format!("Failed to create output directory: {}", e)
     })?;
-
     copy(&document_path, &document_clone_path).map_err(|e| {
         error!("Failed to copy document to data directory: {}", e);
         format!("Failed to copy document to data directory: {}", e)
     })?;
 
-    let document = load_document(&document_clone_path)?;
+    let document = load_document(&PathBuf::from(&document_clone_path))?;
     let total_pages = document.get_pages().len();
-    let (missing_pages, extracted_pages) = get_missing_pages(&images_directory, total_pages)?;
+    let (missing_pages, extracted_pages) =
+        get_missing_pages(&PathBuf::from(&images_directory), total_pages)?;
 
     if missing_pages.is_empty() {
         app.emit("total-extracted-pages", total_pages)
@@ -62,8 +71,8 @@ pub async fn extract_document_images(
 
     process_missing_pages(
         app,
-        document_clone_path,
-        images_directory,
+        PathBuf::from(&document_clone_path),
+        PathBuf::from(&images_directory),
         missing_pages,
         extracted_pages,
         total_pages,

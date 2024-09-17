@@ -1,27 +1,28 @@
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExtractDocumentImagesStage {
-    pub document_path: PathBuf,
-    pub document_clone_path: PathBuf,
-    pub images_directory: PathBuf,
+    pub document_path: String,
+    pub data_directory: String,
+    pub images_directory: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExtractDocumentImagesStageSuccess {
-    pub document_path: PathBuf,
-    pub document_clone_path: PathBuf,
-    pub images_directory: PathBuf,
+    pub document_path: String,
+    pub data_directory: String,
+    pub images_directory: String,
+    pub document_clone_path: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExtractDocumentImagesStageError {
-    pub document_path: PathBuf,
-    pub images_directory: PathBuf,
+    pub document_path: String,
+    pub data_directory: String,
+    pub images_directory: String,
     pub error_message: String,
 }
 
@@ -29,16 +30,9 @@ pub struct ExtractDocumentImagesStageError {
 #[serde(rename_all = "camelCase")]
 pub struct PagePreprocessStage {
     pub id: String,
-    pub data_directory: String,
     pub selected_pages: Vec<u32>,
-    pub images_directory: PathBuf,
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct Date {
-    pub date: String,
-    pub description: String,
+    pub data_directory: String,
+    pub images_directory: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -50,6 +44,12 @@ pub struct PagePreprocessStageResult {
     pub suggested_file_name: String,
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct Date {
+    pub date: String,
+    pub description: String,
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PagePreprocessStageSuccess {
@@ -57,16 +57,16 @@ pub struct PagePreprocessStageSuccess {
     pub selected_pages: Vec<u32>,
     pub data_directory: String,
     pub images_directory: String,
-    pub preprocess_pages_stage_result: PagePreprocessStageResult,
+    pub page_preprocess_stage_result: PagePreprocessStageResult,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PagePreprocessStageError {
     pub id: String,
-    pub data_directory: String,
     pub selected_pages: Vec<u32>,
-    pub images_directory: PathBuf,
+    pub data_directory: String,
+    pub images_directory: String,
     pub error_message: String,
 }
 
@@ -77,7 +77,7 @@ pub struct DocumentProcessStage {
     pub selected_pages: Vec<u32>,
     pub data_directory: String,
     pub images_directory: String,
-    pub preprocess_pages_stage_result: PagePreprocessStageResult,
+    pub page_preprocess_stage_result: PagePreprocessStageResult,
     pub document_path: String,
     pub file_name: String,
 }
@@ -89,7 +89,7 @@ pub struct DocumentProcessStageSuccess {
     pub selected_pages: Vec<u32>,
     pub data_directory: String,
     pub images_directory: String,
-    pub preprocess_pages_stage_result: PagePreprocessStageResult,
+    pub page_preprocess_stage_result: PagePreprocessStageResult,
     pub document_path: String,
     pub file_name: String,
 }
@@ -101,7 +101,7 @@ pub struct DocumentProcessStageError {
     pub selected_pages: Vec<u32>,
     pub data_directory: String,
     pub images_directory: String,
-    pub preprocess_pages_stage_result: PagePreprocessStageResult,
+    pub page_preprocess_stage_result: PagePreprocessStageResult,
     pub document_path: String,
     pub file_name: String,
     pub error_message: String,
@@ -114,7 +114,7 @@ pub struct FinishedDocumentProcessStage {
     pub selected_pages: Vec<u32>,
     pub data_directory: String,
     pub images_directory: String,
-    pub preprocess_pages_stage_result: PagePreprocessStageResult,
+    pub page_preprocess_stage_result: PagePreprocessStageResult,
     pub document_path: String,
     pub file_name: String,
     pub file_name_history: Vec<String>,

@@ -9,20 +9,18 @@ impl PagePreprocessStage {
         self.selected_pages
             .iter()
             .map(|page| {
-                self.images_directory
-                    .join(page.to_string())
-                    .with_extension("webp")
+                PathBuf::from(&self.images_directory).join(page.to_string()).with_extension("webp")
             })
             .collect()
     }
-    pub fn get_document_directory(&self) -> PathBuf {
+    pub fn get_preprocessed_pages_directory(&self) -> PathBuf {
         let page_numbers = self
             .selected_pages
             .iter()
             .map(|&num| num.to_string())
             .collect::<Vec<String>>()
             .join("-");
-        let document_directory = self.images_directory.join(page_numbers);
+        let document_directory = PathBuf::from(&self.images_directory).join(page_numbers);
         if !document_directory.exists() {
             let _ = create_dir_all(&document_directory);
         }

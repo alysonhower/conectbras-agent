@@ -1,5 +1,13 @@
 {
-    "plugins": ["prettier-plugin-svelte"],
-    "pluginSearchDirs": ["./**/*.{svelte,ts,js}"],
-    "overrides": [{ "files": "*.svelte", "options": { "parser": "svelte" } }]
+    "plugins": [
+        "prettier-plugin-svelte"
+    ],
+    "overrides": [
+        {
+            "files": "*.svelte,*.ts,*.js",
+            "options": {
+                "parser": "svelte"
+            }
+        }
+    ]
 }
