@@ -275,14 +275,21 @@ export class FinishedDocumentProcessStageModel
   }
 }
 
-export type inProcess =
+export type Stage =
   | PagePreprocessStageModel
-  | PagePreprocessStageSuccessModel
   | PagePreprocessStageErrorModel
   | DocumentProcessStageModel
-  | DocumentProcessStageSuccessModel
   | DocumentProcessStageErrorModel;
 
+export class InProcessInstanceModel {
+  stage: Stage;
+  id: string;
+  constructor(stage: Stage) {
+    this.stage = stage;
+    const id = stage.id;
+    this.id = id;
+  }
+}
 
 interface SetupState {
   documentPath: string;
@@ -302,7 +309,7 @@ interface SetupState {
   isExtractingImages: boolean;
   extractedPages: number[];
   selectedPages: number[];
-  inProcessList: inProcess[];
+  inProcessList: InProcessInstanceModel[];
   pageProcessStageSuccessList: PagePreprocessStageSuccessModel[];
   pageProcessStageErrorList: PagePreprocessStageErrorModel[];
   documentProcessStageSuccessList: DocumentProcessStageSuccessModel[];

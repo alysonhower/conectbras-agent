@@ -40,6 +40,7 @@
   import {
     globalSetupState,
     // ExtractDocumentImagesStageModel,
+    InProcessInstanceModel,
     PagePreprocessStageSuccessModel,
     PagePreprocessStageModel,
     DocumentProcessStageModel,
@@ -139,9 +140,38 @@
     let textColor: string;
     let borderColor: string;
 
-    if (
+    const inProcessItem = renderState.inProcessList.find((ip) =>
+      ip.stage.selectedPages.includes(pageNumber),
+    );
+    if (inProcessItem) {
+      if (inProcessItem.stage instanceof PagePreprocessStageModel) {
+        text = `Página ${pageNumber}: Pré-processando...`;
+        bgColor = "rgba(255, 255, 224, 0.2)";
+        textColor = "rgba(184, 134, 11, 1)";
+        borderColor = "rgba(255, 255, 224, 1)";
+      } else if (inProcessItem.stage instanceof PagePreprocessStageErrorModel) {
+        text = `Página ${pageNumber}: Erro no pré-processamento, tentando novamente...`;
+        bgColor = "rgba(255, 99, 71, 0.2)";
+        textColor = "rgba(178, 34, 34, 1)";
+        borderColor = "rgba(255, 99, 71, 1)";
+      } else if (inProcessItem.stage instanceof DocumentProcessStageModel) {
+        text = `Página ${pageNumber}: Gerando documento...`;
+        bgColor = "rgba(255, 165, 0, 0.2)";
+        textColor = "rgba(210, 105, 30, 1)";
+        borderColor = "rgba(255, 165, 0, 1)";
+      } else if (
+        inProcessItem.stage instanceof DocumentProcessStageErrorModel
+      ) {
+        text = `Página ${pageNumber}: Erro na geração do documento, tentando novamente...`;
+        bgColor = "rgba(255, 165, 0, 0.2)";
+        textColor = "rgba(210, 105, 30, 1)";
+        borderColor = "rgba(255, 165, 0, 1)";
+      } else {
+        return;
+      }
+    } else if (
       renderState.finishedDocumentsProcessStage.some((fd) =>
-        fd?.selectedPages?.includes(pageNumber),
+        fd.selectedPages.includes(pageNumber),
       )
     ) {
       text = `Página ${pageNumber}: Processamento concluído`;
@@ -150,7 +180,7 @@
       borderColor = "rgba(128, 0, 128, 1)";
     } else if (
       renderState.documentProcessStageSuccessList.some((pp) =>
-        pp?.selectedPages?.includes(pageNumber),
+        pp.selectedPages.includes(pageNumber),
       )
     ) {
       text = `Página ${pageNumber}: Documento gerado`;
@@ -159,7 +189,7 @@
       borderColor = "rgba(0, 128, 0, 1)";
     } else if (
       renderState.pageProcessStageSuccessList.some((pp) =>
-        pp?.selectedPages?.includes(pageNumber),
+        pp.selectedPages.includes(pageNumber),
       )
     ) {
       text = `Página ${pageNumber}: Pré-processada`;
@@ -184,50 +214,6 @@
       bgColor = "rgba(255, 99, 71, 0.2)";
       textColor = "rgba(178, 34, 34, 1)";
       borderColor = "rgba(255, 99, 71, 1)";
-    } else if (
-      renderState.inProcessList.some((pp) =>
-        pp.selectedPages.includes(pageNumber),
-      )
-    ) {
-      const process = renderState.inProcessList.find((pp) =>
-        pp.selectedPages.includes(pageNumber),
-      );
-      if (process instanceof PagePreprocessStageModel) {
-        text = `Página ${pageNumber}: Pré-processando...`;
-        bgColor = "rgba(255, 255, 224, 0.2)";
-        textColor = "rgba(184, 134, 11, 1)";
-        borderColor = "rgba(255, 255, 224, 1)";
-      } else if (process instanceof DocumentProcessStageModel) {
-        text = `Página ${pageNumber}: Gerando documento...`;
-        bgColor = "rgba(255, 165, 0, 0.2)";
-        textColor = "rgba(210, 105, 30, 1)";
-        borderColor = "rgba(255, 165, 0, 1)";
-      } else if (process instanceof PagePreprocessStageSuccessModel) {
-        text = `Página ${pageNumber}: Pré-processamento concluído`;
-        bgColor = "rgba(152, 251, 152, 0.2)";
-        textColor = "rgba(0, 128, 0, 1)";
-        borderColor = "rgba(152, 251, 152, 1)";
-      } else if (process instanceof DocumentProcessStageSuccessModel) {
-        text = `Página ${pageNumber}: Documento gerado`;
-        bgColor = "rgba(0, 255, 127, 0.2)";
-        textColor = "rgba(0, 100, 0, 1)";
-        borderColor = "rgba(0, 255, 127, 1)";
-      } else if (process instanceof PagePreprocessStageErrorModel) {
-        text = `Página ${pageNumber}: Falha no pré-processamento`;
-        bgColor = "rgba(255, 182, 193, 0.2)";
-        textColor = "rgba(178, 34, 34, 1)";
-        borderColor = "rgba(255, 182, 193, 1)";
-      } else if (process instanceof DocumentProcessStageErrorModel) {
-        text = `Página ${pageNumber}: Falha na geração do documento`;
-        bgColor = "rgba(255, 99, 71, 0.2)";
-        textColor = "rgba(139, 0, 0, 1)";
-        borderColor = "rgba(255, 99, 71, 1)";
-      } else {
-        text = `Página ${pageNumber}: Processando...`;
-        bgColor = "rgba(135, 206, 250, 0.2)";
-        textColor = "rgba(30, 144, 255, 1)";
-        borderColor = "rgba(135, 206, 250, 1)";
-      }
     } else if (renderState.selectedPages.includes(pageNumber)) {
       text = `Página ${pageNumber}: Selecionada`;
       bgColor = "rgba(173, 216, 230, 0.5)";
@@ -407,7 +393,7 @@
     const availablePages = renderState.extractedPages.filter(
       (page) =>
         !renderState.inProcessList.some((pp) =>
-          pp.selectedPages.includes(page),
+          pp.stage.selectedPages.includes(page),
         ) &&
         !renderState.pageProcessStageSuccessList.some((pp) =>
           pp.selectedPages.includes(page),
@@ -576,7 +562,11 @@
       imagesDirectory,
     );
 
-    renderState.inProcessList.push(pagePreprocessStage);
+    const pageProcessStageInstance = new InProcessInstanceModel(
+      pagePreprocessStage,
+    );
+
+    renderState.inProcessList.push(pageProcessStageInstance);
     renderState.selectedPages.splice(0, renderState.selectedPages.length);
 
     try {
@@ -619,7 +609,7 @@
           .suggested_file_name;
 
       const ppsIndex = renderState.inProcessList.findIndex(
-        (pps) => pps.id === pagePreprocessStageSuccess.id,
+        (pps) => pps.stage.id === pagePreprocessStageSuccess.id,
       );
 
       if (ppsIndex !== -1) {
@@ -638,7 +628,11 @@
 
       console.log("new DocumentProcessStageModel:", documentProcessStage);
 
-      renderState.inProcessList.push(documentProcessStage);
+      const documentProcessStageInstance = new InProcessInstanceModel(
+        documentProcessStage,
+      );
+
+      renderState.inProcessList.push(documentProcessStageInstance);
 
       try {
         const documentProcessStageSuccess: DocumentProcessStageSuccessModel =
@@ -646,37 +640,13 @@
             documentProcessStage,
           });
 
-        // const documentProcessStageResult = new PagePreprocessStageResultModel(
-        //   result.pagePreprocessStageResult.dates,
-        //   result.pagePreprocessStageResult.type_name,
-        //   result.pagePreprocessStageResult.type_abbr,
-        //   result.pagePreprocessStageResult.summary,
-        //   result.pagePreprocessStageResult.suggested_file_name,
-        // );
-
-        // console.log(
-        //   "new DocumentProcessStageResultModel:",
-        //   documentProcessStageSuccess,
-        // );
-
-        // const documentProcessStageSuccess =
-        //   new DocumentProcessStageSuccessModel(
-        //     result.id,
-        //     result.selectedPages,
-        //     result.dataDirectory,
-        //     result.imagesDirectory,
-        //     documentProcessStageResult,
-        //     result.documentPath,
-        //     result.fileName,
-        //   );
-
         console.log(
           "new DocumentProcessStageSuccessModel:",
           documentProcessStageSuccess,
         );
 
         const dpsIndex = renderState.inProcessList.findIndex(
-          (pps) => pps.id === documentProcessStageSuccess.id,
+          (pps) => pps.stage.id === documentProcessStageSuccess.id,
         );
 
         if (dpsIndex !== -1) {
@@ -708,7 +678,7 @@
         const error = e as DocumentProcessStageErrorModel;
         console.log("new DocumentProcessStageErrorModel:", error);
         const dpsIndex = renderState.inProcessList.findIndex(
-          (pps) => pps.id === error.id,
+          (pps) => pps.stage.id === error.id,
         );
 
         if (dpsIndex !== -1) {
@@ -721,7 +691,7 @@
 
       console.log("new PagePreprocessStageErrorModel:", error);
       const ppsIndex = renderState.inProcessList.findIndex(
-        (pps) => pps.id === error.id,
+        (pps) => pps.stage.id === error.id,
       );
       if (ppsIndex !== -1) {
         renderState.inProcessList.splice(ppsIndex, 1);
@@ -751,22 +721,7 @@
 
   function handleError(message: string, error: any) {
     console.error(message, error);
-    // TODO: Implement user-facing error handling
   }
-
-  // const invokeExtractDocumentImagesStage = async (
-  //   extractDocumentImagesStage: ExtractDocumentImagesStageModel,
-  // ) => {
-  //   console.log("new ExtractDocumentImagesStage:", extractDocumentImagesStage);
-  //   try {
-  //     const result = await invoke("run_extract_document_images_stage", {
-  //       extractDocumentImagesStage,
-  //     });
-  //     console.log("extract_document_images:", result);
-  //   } catch (e) {
-  //     console.error("Error in extract_document_images:", e);
-  //   }
-  // };
 
   $effect(() => {
     if (!renderState.documentPath) return;
@@ -823,7 +778,7 @@
   const isStatusToggleVisible = $derived(
     renderState.numPages &&
       (renderState.inProcessList.some((ip) =>
-        ip.selectedPages.includes(validPageNumber),
+        ip.stage.selectedPages.includes(validPageNumber),
       ) ||
         renderState.finishedDocumentsProcessStage.some((fd) =>
           fd.selectedPages.includes(validPageNumber),
@@ -1140,7 +1095,7 @@
         disabled={!isPageAvailable ||
           renderState.selectedPages.length === 0 ||
           renderState.inProcessList.some((ip) =>
-            ip.selectedPages.includes(renderState.pageNumber),
+            ip.stage.selectedPages.includes(renderState.pageNumber),
           )}
         class={buttonVariants({ size: "icon", className: "" })}
         aria-label="Process selected pages"
@@ -1180,7 +1135,7 @@
       }}
       disabled={!isPageAvailable ||
         renderState.inProcessList.some((ipl) =>
-          ipl.selectedPages.includes(renderState.pageNumber),
+          ipl.stage.selectedPages.includes(renderState.pageNumber),
         ) ||
         renderState.pageProcessStageSuccessList.some((pps) =>
           pps.selectedPages.includes(renderState.pageNumber),
