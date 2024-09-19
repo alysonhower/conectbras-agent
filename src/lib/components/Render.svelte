@@ -594,8 +594,8 @@
       const pagePreprocessStageSuccess = new PagePreprocessStageSuccessModel(
         runPagePreprocessStage.id,
         runPagePreprocessStage.selectedPages,
-        runPagePreprocessStage.imagesDirectory,
         runPagePreprocessStage.dataDirectory,
+        runPagePreprocessStage.imagesDirectory,
         pagePreprocessStageResult,
       );
 
@@ -907,6 +907,13 @@
       unsubscribe5.then((unsubscribe5) => unsubscribe5());
     };
   });
+
+  const currentPageFinishedDocumentFileName = $derived.by(() => {
+    const finishedDocument = renderState.finishedDocumentsProcessStage.find(
+      (fdps) => fdps.selectedPages.includes(validPageNumber),
+    );
+    return finishedDocument?.fileName;
+  });
 </script>
 
 <svelte:window
@@ -967,6 +974,13 @@
             <Eye />
           {/if}
         </Button>
+      {/if}
+      {#if currentPageFinishedDocumentFileName !== undefined}
+        <div
+          class="absolute top-0 left-0 right-0 bg-primary/80 text-primary-foreground p-2 text-sm font-semibold text-center break-all"
+        >
+          Nome do documento gerado: {currentPageFinishedDocumentFileName}
+        </div>
       {/if}
     </div>
   </div>
@@ -1176,7 +1190,7 @@
     >
       <Keyboard class="h-4 w-4" />
     </Button>
-    <Button
+    <!-- <Button
       tabindex={-1}
       size="icon"
       variant="default"
@@ -1191,7 +1205,7 @@
       onclick={cancelProcessing}
     >
       Cancelar
-    </Button>
+    </Button> -->
   </div>
 
   {#if showShortcuts}

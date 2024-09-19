@@ -13,6 +13,7 @@
   } from "lucide-svelte/icons";
   import { v4 as uuidv4 } from "uuid";
 
+  import { Input } from "$lib/components/ui/input";
   import { Button, buttonVariants } from "$lib/components/ui/button";
   import * as Card from "$lib/components/ui/card";
   import * as Collapsible from "$lib/components/ui/collapsible";
@@ -96,9 +97,9 @@
       } else if (document.stage instanceof PagePreprocessStageErrorModel) {
         return `Após erro ao pré-processar ${document.stage.selectedPages.length > 1 ? `as páginas` : `a página`}, tentando novamente.`;
       } else if (document.stage instanceof DocumentProcessStageModel) {
-        return `Pré-processamento concluído com sucesso. Gerando documento.`;
+        return `Processando documento.`;
       } else {
-        return `Após erro ao gerar o documento, tentando novamente.`;
+        return `Após erro ao processar o documento, tentando novamente.`;
       }
     } else {
       return `Documento gerado com sucesso.`;
@@ -144,6 +145,43 @@
       return ``;
     }
   };
+
+  const updateFileName = async (
+    fileName: string,
+    id: string,
+    documentPath: string,
+  ) => {
+    try {
+      const newDocumentPath = await invoke<string>("run_update_file_name", { fileName, documentPath });
+      const finishedDocumentsProcessStage =
+        globalSetupState.state.finishedDocumentsProcessStage;
+      const index = finishedDocumentsProcessStage.findIndex(
+        (document) => document.id === id,
+      );
+      const finishedDocument = finishedDocumentsProcessStage[index];
+      let newFileNameHistory = finishedDocument.fileNameHistory;
+      if (!newFileNameHistory.includes(fileName)) {
+        newFileNameHistory.push(fileName);
+      }
+      const newFinishedDocument = new FinishedDocumentProcessStageModel(
+        finishedDocument.id,
+        finishedDocument.selectedPages,
+        finishedDocument.dataDirectory,
+        finishedDocument.imagesDirectory,
+        finishedDocument.pagePreprocessStageResult,
+        newDocumentPath,
+        fileName,
+        newFileNameHistory,
+      );
+      if (index !== -1) {
+        finishedDocumentsProcessStage.splice(index, 1);
+      }
+      finishedDocumentsProcessStage.push(newFinishedDocument);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+  let newFileName = $state("");
 </script>
 
 <div class="w-full h-full overflow-y-auto p-4 space-y-4">
@@ -161,7 +199,23 @@
           {@html getContent(document)}
         </div>
       </Card.Content>
-      <Card.Footer></Card.Footer>
+      <Card.Footer>
+        {#if document instanceof FinishedDocumentProcessStageModel}
+          <Input bind:value={newFileName} placeholder={document.fileName} />
+          <Button
+            class="w-full"
+            disabled={newFileName === "" || newFileName === document.fileName}
+            onclick={async () =>
+              await updateFileName(
+                newFileName,
+                document.id,
+                document.documentPath,
+              )}
+          >
+            <Pencil class="mr-2 h-4 w-4" />Editar nome
+          </Button>
+        {/if}
+      </Card.Footer>
     </Card.Root>
   {/each}
 </div>

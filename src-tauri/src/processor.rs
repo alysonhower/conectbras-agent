@@ -219,3 +219,11 @@ pub async fn run_document_process_stage(
         file_name,
     })
 }
+
+#[tauri::command]
+pub fn run_update_file_name(file_name: String, document_path: String) -> Result<String, String> {
+    let document_path = Path::new(&document_path);
+    let new_file_name = document_path.with_file_name(file_name).with_extension("pdf");
+    fs::rename(&document_path, &new_file_name).map_err(|e| e.to_string())?;
+    Ok(new_file_name.display().to_string())
+}
