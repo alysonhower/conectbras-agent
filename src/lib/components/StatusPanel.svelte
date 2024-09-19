@@ -146,13 +146,24 @@
     }
   };
 
+  const openInExplorer = async (documentPath: string) => {
+    try {
+      await invoke("open_in_explorer", { path: documentPath });
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
   const updateFileName = async (
     fileName: string,
     id: string,
     documentPath: string,
   ) => {
     try {
-      const newDocumentPath = await invoke<string>("run_update_file_name", { fileName, documentPath });
+      const newDocumentPath = await invoke<string>("run_update_file_name", {
+        fileName,
+        documentPath,
+      });
       const finishedDocumentsProcessStage =
         globalSetupState.state.finishedDocumentsProcessStage;
       const index = finishedDocumentsProcessStage.findIndex(
@@ -181,7 +192,17 @@
       console.error(error);
     }
   };
-  let newFileName = $state("");
+
+  interface NewFileNames {
+    [key: string]: string;
+  }
+
+  let newFileNames = $state<NewFileNames>({});
+
+  $effect(() => {
+    newFileNames;
+    console.log("newFileNames changed: ", newFileNames);
+  });
 </script>
 
 <div class="w-full h-full overflow-y-auto p-4 space-y-4">
@@ -201,19 +222,31 @@
       </Card.Content>
       <Card.Footer>
         {#if document instanceof FinishedDocumentProcessStageModel}
-          <Input bind:value={newFileName} placeholder={document.fileName} />
-          <Button
-            class="w-full"
-            disabled={newFileName === "" || newFileName === document.fileName}
-            onclick={async () =>
-              await updateFileName(
-                newFileName,
-                document.id,
-                document.documentPath,
-              )}
-          >
-            <Pencil class="mr-2 h-4 w-4" />Editar nome
-          </Button>
+          <div class="flex flex-col space-y-2 w-full mt-2">
+            <Input
+              bind:value={newFileNames[document.id]}
+              placeholder={document.fileName}
+            />
+            <div class="flex justify-end space-x-2 w-full">
+              <Button
+                disabled={!newFileNames[document.id] ||
+                  newFileNames[document.id] === document.fileName}
+                onclick={async () =>
+                  await updateFileName(
+                    newFileNames[document.id] || document.fileName,
+                    document.id,
+                    document.documentPath,
+                  )}
+              >
+                <Pencil class="mr-2 h-4 w-4" />Editar nome
+              </Button>
+              <Button
+                onclick={() => openInExplorer(document.documentPath)}
+              >
+                <FolderOpen class="mr-2 h-4 w-4" />Abrir no Explorer
+              </Button>
+            </div>
+          </div>
         {/if}
       </Card.Footer>
     </Card.Root>

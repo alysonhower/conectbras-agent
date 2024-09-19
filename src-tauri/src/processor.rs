@@ -227,3 +227,11 @@ pub fn run_update_file_name(file_name: String, document_path: String) -> Result<
     fs::rename(&document_path, &new_file_name).map_err(|e| e.to_string())?;
     Ok(new_file_name.display().to_string())
 }
+
+#[tauri::command]
+pub fn open_in_explorer(path: &str) -> Result<(), String> {
+    let mut command = std::process::Command::new("explorer");
+    command.args(&["/select,", path]);
+    command.spawn().map_err(|_| "Failed to open in explorer")?;
+    Ok(())
+}
