@@ -15,6 +15,17 @@ pub async fn run_page_preprocess_stage(
     handle: AppHandle,
     page_preprocess_stage: PagePreprocessStage,
 ) -> Result<PagePreprocessStageSuccess, PagePreprocessStageError> {
+    // Introduce a test error condition
+    if page_preprocess_stage.id == "test_error" {
+        return Err(PagePreprocessStageError {
+            id: page_preprocess_stage.id,
+            data_directory: page_preprocess_stage.data_directory,
+            selected_pages: page_preprocess_stage.selected_pages,
+            images_directory: page_preprocess_stage.images_directory,
+            error_message: "Forced error for testing".to_string(),
+        });
+    }
+
     let pages_paths = page_preprocess_stage.get_pages_paths();
     let preprocessed_pages_directory = page_preprocess_stage.get_preprocessed_pages_directory();
     for page_path in pages_paths.clone() {
@@ -112,6 +123,19 @@ pub async fn run_document_process_stage(
     handle: AppHandle,
     document_process_stage: DocumentProcessStage,
 ) -> Result<DocumentProcessStageSuccess, DocumentProcessStageError> {
+    if document_process_stage.id == "test_error" {
+        return Err(DocumentProcessStageError {
+            id: document_process_stage.id,
+            selected_pages: document_process_stage.selected_pages,
+            data_directory: document_process_stage.data_directory,
+            images_directory: document_process_stage.images_directory,
+            page_preprocess_stage_result: document_process_stage.page_preprocess_stage_result,
+            document_path: document_process_stage.document_path,
+            file_name: document_process_stage.file_name,
+            error_message: "Forced error for testing".to_string(),
+        });
+    }
+
     let file_name = document_process_stage
         .page_preprocess_stage_result
         .suggested_file_name
@@ -209,6 +233,8 @@ pub async fn run_document_process_stage(
         });
     }
 
+
+
     Ok(DocumentProcessStageSuccess {
         id: document_process_stage.id,
         selected_pages: document_process_stage.selected_pages,
@@ -223,7 +249,9 @@ pub async fn run_document_process_stage(
 #[tauri::command]
 pub fn run_update_file_name(file_name: String, document_path: String) -> Result<String, String> {
     let document_path = Path::new(&document_path);
-    let new_file_name = document_path.with_file_name(file_name).with_extension("pdf");
+    let new_file_name = document_path
+        .with_file_name(file_name)
+        .with_extension("pdf");
     fs::rename(&document_path, &new_file_name).map_err(|e| e.to_string())?;
     Ok(new_file_name.display().to_string())
 }

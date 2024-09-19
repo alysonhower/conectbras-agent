@@ -88,9 +88,13 @@
     document:
       | InProcessInstanceModel
       | PagePreprocessStageModel
+      | PagePreprocessStageErrorModel
       | DocumentProcessStageModel
+      | DocumentProcessStageErrorModel
       | FinishedDocumentProcessStageModel,
   ): string => {
+    console.log("document: ", document.constructor.name);
+
     if (document instanceof InProcessInstanceModel) {
       if (document.stage instanceof PagePreprocessStageModel) {
         return `Pré-processando ${document.stage.selectedPages.length > 1 ? `páginas` : `página`}.`;
@@ -98,21 +102,30 @@
         return `Após erro ao pré-processar ${document.stage.selectedPages.length > 1 ? `as páginas` : `a página`}, tentando novamente.`;
       } else if (document.stage instanceof DocumentProcessStageModel) {
         return `Processando documento.`;
-      } else {
+      } else if (document.stage instanceof DocumentProcessStageErrorModel) {
         return `Após erro ao processar o documento, tentando novamente.`;
       }
-    } else {
+    } else if (document instanceof FinishedDocumentProcessStageModel) {
       return `Documento gerado com sucesso.`;
+    } else if (document instanceof PagePreprocessStageErrorModel) {
+      return `Erro ao pré-processar ${document.selectedPages.length > 1 ? `as páginas` : `a página`}. Se desejar, você pode tentar novamente.`;
+    } else if (document instanceof DocumentProcessStageErrorModel) {
+      return `Erro ao processar ${document.selectedPages.length > 1 ? `as páginas` : `a página`}. Se desejar, você pode tentar novamente.`;
     }
+    return "";
   };
 
-  const getContent = (
+  const getCardContent = (
     document:
       | InProcessInstanceModel
       | PagePreprocessStageModel
+      | PagePreprocessStageErrorModel
       | DocumentProcessStageModel
+      | DocumentProcessStageErrorModel
       | FinishedDocumentProcessStageModel,
   ): string => {
+    console.log("document: ", document.constructor.name);
+
     if (document instanceof InProcessInstanceModel) {
       if (document.stage instanceof PagePreprocessStageModel) {
         return `<p class="text-gray-700">Encaminhando ${document.stage.selectedPages.length > 1 ? `as images das` : `a imagem da`} ${getTitle(document.stage.selectedPages).toLowerCase()} para a IA.</p>`;
@@ -141,9 +154,12 @@
         ${document.fileNameHistory.map((name) => `<li>${name}</li>`).join("")}
       </ul>
     `;
-    } else {
-      return ``;
+    } else if (document instanceof PagePreprocessStageErrorModel) {
+      return `<p class="text-red-600 font-semibold">Detalhes do erro: ${document.errorMessage}.</p>`;
+    } else if (document instanceof DocumentProcessStageErrorModel) {
+      return `<p class="text-red-600 font-semibold">Detalhes do erro: ${document.errorMessage}.</p>`;
     }
+    return "";
   };
 
   const openInExplorer = async (documentPath: string) => {
@@ -203,6 +219,236 @@
     newFileNames;
     console.log("newFileNames changed: ", newFileNames);
   });
+
+  const handleRetryPagePreprocessStage = async (
+    pagePreprocessStageError: PagePreprocessStageErrorModel,
+  ) => {
+    const index = renderState.pageProcessStageErrorList.findIndex(
+      (error) => error.id === pagePreprocessStageError.id,
+    );
+    if (index !== -1) {
+      renderState.pageProcessStageErrorList.splice(index, 1);
+    }
+
+    const pagePreprocessStageModel = new PagePreprocessStageModel(
+      uuidv4(),
+      pagePreprocessStageError.selectedPages,
+      pagePreprocessStageError.dataDirectory,
+      pagePreprocessStageError.imagesDirectory,
+    );
+
+    const pageProcessStageInstance = new InProcessInstanceModel(
+      pagePreprocessStageModel,
+    );
+    renderState.inProcessList.push(pageProcessStageInstance);
+
+    try {
+      const runPagePreprocessStage = await invoke("run_page_preprocess_stage", {
+        pagePreprocessStage: pagePreprocessStageModel,
+      });
+
+      const runPagePreprocessStageSuccess =
+        runPagePreprocessStage as PagePreprocessStageSuccessModel;
+
+      const pagePreprocessStageSuccess = new PagePreprocessStageSuccessModel(
+        runPagePreprocessStageSuccess.id,
+        runPagePreprocessStageSuccess.selectedPages,
+        runPagePreprocessStageSuccess.dataDirectory,
+        runPagePreprocessStageSuccess.imagesDirectory,
+        runPagePreprocessStageSuccess.pagePreprocessStageResult,
+      );
+
+      const ppsIndex = renderState.inProcessList.findIndex(
+        (pps) => pps.stage.id === pagePreprocessStageSuccess.id,
+      );
+
+      if (ppsIndex !== -1) {
+        renderState.inProcessList.splice(ppsIndex, 1);
+      }
+
+      const fileName =
+        pagePreprocessStageSuccess.pagePreprocessStageResult
+          .suggested_file_name;
+
+      const documentProcessStageModel = new DocumentProcessStageModel(
+        pagePreprocessStageSuccess.id,
+        pagePreprocessStageSuccess.selectedPages,
+        pagePreprocessStageSuccess.dataDirectory,
+        pagePreprocessStageSuccess.imagesDirectory,
+        pagePreprocessStageSuccess.pagePreprocessStageResult,
+        globalSetupState.documentClonePath,
+        fileName,
+      );
+
+      const documentProcessStageInstance = new InProcessInstanceModel(
+        documentProcessStageModel,
+      );
+      renderState.inProcessList.push(documentProcessStageInstance);
+
+      try {
+        const documentProcessStage = await invoke(
+          "run_document_process_stage",
+          {
+            documentProcessStage: documentProcessStageModel,
+          },
+        );
+
+        const documentProcessStageSuccessModel =
+          documentProcessStage as DocumentProcessStageSuccessModel;
+
+        const dpsIndex = renderState.inProcessList.findIndex(
+          (pps) => pps.stage.id === documentProcessStageSuccessModel.id,
+        );
+        if (dpsIndex !== -1) {
+          renderState.inProcessList.splice(dpsIndex, 1);
+        }
+
+        const finishedDocumentProcessStage =
+          new FinishedDocumentProcessStageModel(
+            documentProcessStageSuccessModel.id,
+            documentProcessStageSuccessModel.selectedPages,
+            documentProcessStageSuccessModel.dataDirectory,
+            documentProcessStageSuccessModel.imagesDirectory,
+            documentProcessStageSuccessModel.pagePreprocessStageResult,
+            documentProcessStageSuccessModel.documentPath,
+            documentProcessStageSuccessModel.fileName,
+            [documentProcessStageSuccessModel.fileName],
+          );
+
+        renderState.finishedDocumentsProcessStage.push(
+          finishedDocumentProcessStage,
+        );
+      } catch (error) {
+        const documentProcessStageError =
+          error as DocumentProcessStageErrorModel;
+
+        const dpsIndex = renderState.inProcessList.findIndex(
+          (pps) => pps.stage.id === documentProcessStageError.id,
+        );
+        if (dpsIndex !== -1) {
+          renderState.inProcessList.splice(dpsIndex, 1);
+        }
+
+        const documentProcessStageErrorModel =
+          new DocumentProcessStageErrorModel(
+            documentProcessStageError.id,
+            documentProcessStageError.selectedPages,
+            documentProcessStageError.dataDirectory,
+            documentProcessStageError.imagesDirectory,
+            documentProcessStageError.pagePreprocessStageResult,
+            documentProcessStageError.documentPath,
+            documentProcessStageError.fileName,
+            documentProcessStageError.errorMessage,
+          );
+
+        renderState.documentProcessStageErrorList.push(
+          documentProcessStageErrorModel,
+        );
+      }
+    } catch (error) {
+      const pagePreprocessStageError = error as PagePreprocessStageErrorModel;
+
+      const ppsIndex = renderState.inProcessList.findIndex(
+        (pps) => pps.stage.id === pagePreprocessStageError.id,
+      );
+      if (ppsIndex !== -1) {
+        renderState.inProcessList.splice(ppsIndex, 1);
+      }
+
+      const pagePreprocessStageErrorModel = new PagePreprocessStageErrorModel(
+        pagePreprocessStageError.id,
+        pagePreprocessStageError.selectedPages,
+        pagePreprocessStageError.dataDirectory,
+        pagePreprocessStageError.imagesDirectory,
+        pagePreprocessStageError.errorMessage,
+      );
+
+      renderState.pageProcessStageErrorList.push(pagePreprocessStageErrorModel);
+    }
+  };
+
+  const handleRetryDocumentProcessStage = async (
+    documentProcessStageError: DocumentProcessStageErrorModel,
+  ) => {
+    const index = renderState.documentProcessStageErrorList.findIndex(
+      (error) => error.id === documentProcessStageError.id,
+    );
+    if (index !== -1) {
+      renderState.documentProcessStageErrorList.splice(index, 1);
+    }
+
+    const documentProcessStageModel = new DocumentProcessStageModel(
+      uuidv4(),
+      documentProcessStageError.selectedPages,
+      documentProcessStageError.dataDirectory,
+
+      documentProcessStageError.imagesDirectory,
+      documentProcessStageError.pagePreprocessStageResult,
+      documentProcessStageError.documentPath,
+      documentProcessStageError.fileName,
+    );
+
+    const documentProcessStageInstance = new InProcessInstanceModel(
+      documentProcessStageModel,
+    );
+    renderState.inProcessList.push(documentProcessStageInstance);
+
+    try {
+      const documentProcessStage = await invoke("run_document_process_stage", {
+        documentProcessStage: documentProcessStageModel,
+      });
+
+      const documentProcessStageSuccessModel =
+        documentProcessStage as DocumentProcessStageSuccessModel;
+
+      const dpsIndex = renderState.inProcessList.findIndex(
+        (pps) => pps.stage.id === documentProcessStageSuccessModel.id,
+      );
+      if (dpsIndex !== -1) {
+        renderState.inProcessList.splice(dpsIndex, 1);
+      }
+
+      const finishedDocumentProcessStage =
+        new FinishedDocumentProcessStageModel(
+          documentProcessStageSuccessModel.id,
+          documentProcessStageSuccessModel.selectedPages,
+          documentProcessStageSuccessModel.dataDirectory,
+          documentProcessStageSuccessModel.imagesDirectory,
+          documentProcessStageSuccessModel.pagePreprocessStageResult,
+          documentProcessStageSuccessModel.documentPath,
+          documentProcessStageSuccessModel.fileName,
+          [documentProcessStageSuccessModel.fileName],
+        );
+
+      renderState.finishedDocumentsProcessStage.push(
+        finishedDocumentProcessStage,
+      );
+    } catch (error) {
+      const documentProcessStageError = error as DocumentProcessStageErrorModel;
+
+      const dpsIndex = renderState.inProcessList.findIndex(
+        (pps) => pps.stage.id === documentProcessStageError.id,
+      );
+      if (dpsIndex !== -1) {
+        renderState.inProcessList.splice(dpsIndex, 1);
+      }
+
+      const documentProcessStageErrorModel = new DocumentProcessStageErrorModel(
+        documentProcessStageError.id,
+        documentProcessStageError.selectedPages,
+        documentProcessStageError.dataDirectory,
+        documentProcessStageError.imagesDirectory,
+        documentProcessStageError.pagePreprocessStageResult,
+        documentProcessStageError.documentPath,
+        documentProcessStageError.fileName,
+        documentProcessStageError.errorMessage,
+      );
+
+      renderState.documentProcessStageErrorList.push(
+        documentProcessStageErrorModel,
+      );
+    }
+  };
 </script>
 
 <div class="w-full h-full overflow-y-auto p-4 space-y-4">
@@ -217,7 +463,7 @@
       </Card.Header>
       <Card.Content class="text-sm flex-grow overflow-y-auto">
         <div class="prose prose-sm max-w-none break-all">
-          {@html getContent(document)}
+          {@html getCardContent(document)}
         </div>
       </Card.Content>
       <Card.Footer>
@@ -240,12 +486,28 @@
               >
                 <Pencil class="mr-2 h-4 w-4" />Editar nome
               </Button>
-              <Button
-                onclick={() => openInExplorer(document.documentPath)}
-              >
+              <Button onclick={() => openInExplorer(document.documentPath)}>
                 <FolderOpen class="mr-2 h-4 w-4" />Abrir no Explorer
               </Button>
             </div>
+          </div>
+        {:else if document instanceof PagePreprocessStageErrorModel}
+          <div class="flex justify-end w-full">
+            <Button
+              onclick={async () =>
+                await handleRetryPagePreprocessStage(document)}
+            >
+              <RefreshCw class="mr-2 h-4 w-4" />Tentar novamente
+            </Button>
+          </div>
+        {:else if document instanceof DocumentProcessStageErrorModel}
+          <div class="flex justify-end w-full">
+            <Button
+              onclick={async () =>
+                await handleRetryDocumentProcessStage(document)}
+            >
+              <RefreshCw class="mr-2 h-4 w-4" />Tentar novamente
+            </Button>
           </div>
         {/if}
       </Card.Footer>

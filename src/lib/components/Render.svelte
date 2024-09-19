@@ -389,48 +389,10 @@
   };
 
   const updatePageNumberAfterSelection = (pageNumber: number) => {
-    const currentIndex = renderState.selectedPages.indexOf(pageNumber);
-    const availablePages = renderState.extractedPages.filter(
-      (page) =>
-        !renderState.inProcessList.some((pp) =>
-          pp.stage.selectedPages.includes(page),
-        ) &&
-        !renderState.pageProcessStageSuccessList.some((pp) =>
-          pp.selectedPages.includes(page),
-        ) &&
-        !renderState.documentProcessStageSuccessList.some((pp) =>
-          pp.selectedPages.includes(page),
-        ) &&
-        !renderState.finishedDocumentsProcessStage.some((pp) =>
-          pp.selectedPages.includes(page),
-        ),
+    const nextAvailablePage = renderState.extractedPages.find(
+      (page) => page > pageNumber,
     );
-
-    if (currentIndex === -1) {
-      const prevSelectedPage = renderState.selectedPages
-        .slice()
-        .reverse()
-        .find((page) => availablePages.includes(page) && page < pageNumber);
-      const nextSelectedPage = renderState.selectedPages.find(
-        (page) => availablePages.includes(page) && page > pageNumber,
-      );
-      renderState.pageNumber =
-        prevSelectedPage || nextSelectedPage || pageNumber;
-    } else {
-      const prevUnselectedPage = availablePages
-        .slice()
-        .reverse()
-        .find(
-          (page) =>
-            page < pageNumber && !renderState.selectedPages.includes(page),
-        );
-      const nextUnselectedPage = availablePages.find(
-        (page) =>
-          page > pageNumber && !renderState.selectedPages.includes(page),
-      );
-      renderState.pageNumber =
-        prevUnselectedPage || nextUnselectedPage || pageNumber;
-    }
+    renderState.pageNumber = nextAvailablePage || pageNumber;
   };
 
   const handlePageNumberClick = (pageNumber: number) => {
@@ -555,58 +517,36 @@
     const selectedPages = $state.snapshot(renderState.selectedPages);
     const dataDirectory = $state.snapshot(globalSetupState.dataDirectory);
     const imagesDirectory = $state.snapshot(globalSetupState.imagesDirectory);
-    const pagePreprocessStage = new PagePreprocessStageModel(
+    const pagePreprocessStageModel = new PagePreprocessStageModel(
       uuidv4(),
+      // "test_error",
       selectedPages,
       dataDirectory,
       imagesDirectory,
     );
 
     const pageProcessStageInstance = new InProcessInstanceModel(
-      pagePreprocessStage,
+      pagePreprocessStageModel,
     );
 
     renderState.inProcessList.push(pageProcessStageInstance);
     renderState.selectedPages.splice(0, renderState.selectedPages.length);
 
     try {
-      const runPagePreprocessStage =
-        await invoke<PagePreprocessStageSuccessModel>(
-          "run_page_preprocess_stage",
-          {
-            pagePreprocessStage,
-          },
-        );
+      const runPagePreprocessStage = await invoke("run_page_preprocess_stage", {
+        pagePreprocessStage: pagePreprocessStageModel,
+      });
 
-      const pagePreprocessStageResult = new PagePreprocessStageResultModel(
-        runPagePreprocessStage.pagePreprocessStageResult.dates,
-        runPagePreprocessStage.pagePreprocessStageResult.type_name,
-        runPagePreprocessStage.pagePreprocessStageResult.type_abbr,
-        runPagePreprocessStage.pagePreprocessStageResult.summary,
-        runPagePreprocessStage.pagePreprocessStageResult.suggested_file_name,
-      );
-
-      console.log(
-        "new PagePreprocessStageResultModel:",
-        pagePreprocessStageResult,
-      );
+      const runPagePreprocessStageSucess =
+        runPagePreprocessStage as PagePreprocessStageSuccessModel;
 
       const pagePreprocessStageSuccess = new PagePreprocessStageSuccessModel(
-        runPagePreprocessStage.id,
-        runPagePreprocessStage.selectedPages,
-        runPagePreprocessStage.dataDirectory,
-        runPagePreprocessStage.imagesDirectory,
-        pagePreprocessStageResult,
+        runPagePreprocessStageSucess.id,
+        runPagePreprocessStageSucess.selectedPages,
+        runPagePreprocessStageSucess.dataDirectory,
+        runPagePreprocessStageSucess.imagesDirectory,
+        runPagePreprocessStageSucess.pagePreprocessStageResult,
       );
-
-      console.log(
-        "new PagePreprocessStageSuccessModel:",
-        pagePreprocessStageSuccess,
-      );
-
-      const fileName =
-        pagePreprocessStageSuccess.pagePreprocessStageResult
-          .suggested_file_name;
 
       const ppsIndex = renderState.inProcessList.findIndex(
         (pps) => pps.stage.id === pagePreprocessStageSuccess.id,
@@ -616,88 +556,109 @@
         renderState.inProcessList.splice(ppsIndex, 1);
       }
 
-      const documentProcessStage = new DocumentProcessStageModel(
+      const fileName =
+        pagePreprocessStageSuccess.pagePreprocessStageResult
+          .suggested_file_name;
+
+      const documentProcessStageModel = new DocumentProcessStageModel(
         pagePreprocessStageSuccess.id,
         pagePreprocessStageSuccess.selectedPages,
         pagePreprocessStageSuccess.dataDirectory,
         pagePreprocessStageSuccess.imagesDirectory,
-        pagePreprocessStageResult,
+        pagePreprocessStageSuccess.pagePreprocessStageResult,
         globalSetupState.documentClonePath,
         fileName,
       );
 
-      console.log("new DocumentProcessStageModel:", documentProcessStage);
+      const documentProcessStageInProcessInstanceModel =
+        new InProcessInstanceModel(documentProcessStageModel);
 
-      const documentProcessStageInstance = new InProcessInstanceModel(
-        documentProcessStage,
+      renderState.inProcessList.push(
+        documentProcessStageInProcessInstanceModel,
       );
 
-      renderState.inProcessList.push(documentProcessStageInstance);
-
       try {
-        const documentProcessStageSuccess: DocumentProcessStageSuccessModel =
-          await invoke("run_document_process_stage", {
-            documentProcessStage,
-          });
-
-        console.log(
-          "new DocumentProcessStageSuccessModel:",
-          documentProcessStageSuccess,
+        const documentProcessStage = await invoke(
+          "run_document_process_stage",
+          {
+            documentProcessStage: documentProcessStageModel,
+          },
         );
 
-        const dpsIndex = renderState.inProcessList.findIndex(
-          (pps) => pps.stage.id === documentProcessStageSuccess.id,
+        const documentProcessStageSuccessModel =
+          documentProcessStage as DocumentProcessStageSuccessModel;
+
+        const dpssmIndex = renderState.inProcessList.findIndex(
+          (dpssm) => dpssm.stage.id === documentProcessStageSuccessModel.id,
         );
 
-        if (dpsIndex !== -1) {
-          renderState.inProcessList.splice(dpsIndex, 1);
+        if (dpssmIndex !== -1) {
+          renderState.inProcessList.splice(dpssmIndex, 1);
         }
 
         const finishedDocumentProcessStage =
           new FinishedDocumentProcessStageModel(
-            documentProcessStageSuccess.id,
-            documentProcessStageSuccess.selectedPages,
-            documentProcessStageSuccess.dataDirectory,
-            documentProcessStageSuccess.imagesDirectory,
-            documentProcessStageSuccess.pagePreprocessStageResult,
-            documentProcessStageSuccess.documentPath,
-            documentProcessStageSuccess.fileName,
-            [documentProcessStageSuccess.fileName],
+            documentProcessStageSuccessModel.id,
+            documentProcessStageSuccessModel.selectedPages,
+            documentProcessStageSuccessModel.dataDirectory,
+            documentProcessStageSuccessModel.imagesDirectory,
+            documentProcessStageSuccessModel.pagePreprocessStageResult,
+            documentProcessStageSuccessModel.documentPath,
+            documentProcessStageSuccessModel.fileName,
+            [documentProcessStageSuccessModel.fileName],
           );
-
-        console.log(
-          "new FinishedDocumentProcessStageModel:",
-          finishedDocumentProcessStage,
-        );
 
         renderState.finishedDocumentsProcessStage.push(
           finishedDocumentProcessStage,
         );
-      } catch (e) {
-        console.log("Error in run_document_process_stage raw error:", e);
-        const error = e as DocumentProcessStageErrorModel;
-        console.log("new DocumentProcessStageErrorModel:", error);
-        const dpsIndex = renderState.inProcessList.findIndex(
-          (pps) => pps.stage.id === error.id,
+      } catch (error) {
+        const documentProcessStageError =
+          error as DocumentProcessStageErrorModel;
+
+        const dpsemIndex = renderState.inProcessList.findIndex(
+          (dpsem) => dpsem.stage.id === documentProcessStageError.id,
         );
 
-        if (dpsIndex !== -1) {
-          renderState.inProcessList.splice(dpsIndex, 1);
+        if (dpsemIndex !== -1) {
+          renderState.inProcessList.splice(dpsemIndex, 1);
         }
-        renderState.documentProcessStageErrorList.push(error);
-      }
-    } catch (e) {
-      const error = e as PagePreprocessStageErrorModel;
 
-      console.log("new PagePreprocessStageErrorModel:", error);
+        const documentProcessStageErrorModel =
+          new DocumentProcessStageErrorModel(
+            documentProcessStageError.id,
+            documentProcessStageError.selectedPages,
+            documentProcessStageError.dataDirectory,
+            documentProcessStageError.imagesDirectory,
+            documentProcessStageError.pagePreprocessStageResult,
+            documentProcessStageError.documentPath,
+            documentProcessStageError.fileName,
+            documentProcessStageError.errorMessage,
+          );
+
+        renderState.documentProcessStageErrorList.push(
+          documentProcessStageErrorModel,
+        );
+      }
+    } catch (error) {
+      const pagePreprocessStageError = error as PagePreprocessStageErrorModel;
+
       const ppsIndex = renderState.inProcessList.findIndex(
-        (pps) => pps.stage.id === error.id,
+        (pps) => pps.stage.id === pagePreprocessStageError.id,
       );
+
       if (ppsIndex !== -1) {
         renderState.inProcessList.splice(ppsIndex, 1);
       }
 
-      renderState.pageProcessStageErrorList.push(error);
+      const pagePreprocessStageErrorModel = new PagePreprocessStageErrorModel(
+        pagePreprocessStageError.id,
+        pagePreprocessStageError.selectedPages,
+        pagePreprocessStageError.dataDirectory,
+        pagePreprocessStageError.imagesDirectory,
+        pagePreprocessStageError.errorMessage,
+      );
+
+      renderState.pageProcessStageErrorList.push(pagePreprocessStageErrorModel);
     }
   };
 
@@ -866,16 +827,16 @@
 
   $effect(() => {
     const unsubscribe1 = listen("utility-stdout", (data) => {
-      console.log("Utility stdout:", data.payload);
+      // console.log("Utility stdout:", data.payload);
     });
     const unsubscribe2 = listen("utility-terminated", (data) => {
-      console.log("Utility terminated:", data.payload);
+      // console.log("Utility terminated:", data.payload);
     });
     const unsubscribe3 = listen("utility-error", (data) => {
-      console.error("Utility error:", data.payload);
+      // console.error("Utility error:", data.payload);
     });
     const unsubscribe4 = listen<ProgressUpdate>("progress", (data) => {
-      console.log("Progress:", data.payload);
+      // console.log("Progress:", data.payload);
       const {
         pages_processed,
         pages_to_process,
@@ -883,15 +844,15 @@
         extracted_page_numbers,
         total_document_pages,
       } = data.payload;
-      console.log(
-        `Processed ${pages_processed}/${pages_to_process} pages. Estimated time remaining: ${estimated_seconds_remaining} seconds`,
-      );
+      // console.log(
+      // `Processed ${pages_processed}/${pages_to_process} pages. Estimated time remaining: ${estimated_seconds_remaining} seconds`,
+      // );
       renderState.extractedPages = extracted_page_numbers;
       renderState.isExtractingImages =
         extracted_page_numbers.length !== total_document_pages;
     });
     const unsubscribe5 = listen<number>("total-extracted-pages", (event) => {
-      console.log(`All ${event.payload} .webp files match the PDF pages.`);
+      // console.log(`All ${event.payload} .webp files match the PDF pages.`);
       renderState.extractedPages = Array.from(
         { length: event.payload },
         (_, i) => i + 1,
