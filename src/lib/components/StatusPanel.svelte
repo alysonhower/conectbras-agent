@@ -199,6 +199,7 @@
         newDocumentPath,
         fileName,
         newFileNameHistory,
+        finishedDocument.pageNumberPrefix,
       );
       if (index !== -1) {
         finishedDocumentsProcessStage.splice(index, 1);
@@ -213,7 +214,27 @@
     [key: string]: string;
   }
 
+  interface VerifiedDocuments {
+    [key: string]: boolean;
+  }
+
   let newFileNames = $state<NewFileNames>({});
+
+  let verifiedDocuments = $state<VerifiedDocuments>({});
+
+  const handleRemovePageNumberPrefix = async (
+    finishedDocument: FinishedDocumentProcessStageModel,
+  ) => {
+    try {
+      const fileName =
+        finishedDocument.pagePreprocessStageResult.suggested_file_name;
+      const documentPath = finishedDocument.documentPath;
+      await updateFileName(fileName, finishedDocument.id, documentPath);
+      verifiedDocuments[finishedDocument.id] = true;
+    } catch (error) {
+      console.error(error);
+    }
+  };
 
   $effect(() => {
     newFileNames;
@@ -256,6 +277,7 @@
         runPagePreprocessStageSuccess.dataDirectory,
         runPagePreprocessStageSuccess.imagesDirectory,
         runPagePreprocessStageSuccess.pagePreprocessStageResult,
+        runPagePreprocessStageSuccess.pageNumberPrefix,
       );
 
       const ppsIndex = renderState.inProcessList.findIndex(
@@ -278,6 +300,7 @@
         pagePreprocessStageSuccess.pagePreprocessStageResult,
         globalSetupState.documentClonePath,
         fileName,
+        pagePreprocessStageSuccess.pageNumberPrefix,
       );
 
       const documentProcessStageInstance = new InProcessInstanceModel(
@@ -313,6 +336,7 @@
             documentProcessStageSuccessModel.documentPath,
             documentProcessStageSuccessModel.fileName,
             [documentProcessStageSuccessModel.fileName],
+            documentProcessStageSuccessModel.pageNumberPrefix,
           );
 
         renderState.finishedDocumentsProcessStage.push(
@@ -339,6 +363,7 @@
             documentProcessStageError.documentPath,
             documentProcessStageError.fileName,
             documentProcessStageError.errorMessage,
+            pagePreprocessStageSuccess.pageNumberPrefix,
           );
 
         renderState.documentProcessStageErrorList.push(
@@ -381,11 +406,11 @@
       uuidv4(),
       documentProcessStageError.selectedPages,
       documentProcessStageError.dataDirectory,
-
       documentProcessStageError.imagesDirectory,
       documentProcessStageError.pagePreprocessStageResult,
       documentProcessStageError.documentPath,
       documentProcessStageError.fileName,
+      documentProcessStageError.pageNumberPrefix,
     );
 
     const documentProcessStageInstance = new InProcessInstanceModel(
@@ -418,6 +443,7 @@
           documentProcessStageSuccessModel.documentPath,
           documentProcessStageSuccessModel.fileName,
           [documentProcessStageSuccessModel.fileName],
+          documentProcessStageSuccessModel.pageNumberPrefix,
         );
 
       renderState.finishedDocumentsProcessStage.push(
@@ -442,6 +468,7 @@
         documentProcessStageError.documentPath,
         documentProcessStageError.fileName,
         documentProcessStageError.errorMessage,
+        documentProcessStageError.pageNumberPrefix,
       );
 
       renderState.documentProcessStageErrorList.push(
@@ -449,14 +476,30 @@
       );
     }
   };
+
+  $effect(() => {
+    allDocuments.forEach((doc) => {
+      if (
+        doc instanceof FinishedDocumentProcessStageModel &&
+        !newFileNames[doc.id]
+      ) {
+        newFileNames[doc.id] = doc.fileName;
+      }
+    });
+  });
 </script>
 
 <div class="w-full h-full overflow-y-auto p-4 space-y-4">
   {#each allDocuments as document (document.id)}
     {@const title = `${getTitle(document instanceof InProcessInstanceModel ? document.stage.selectedPages : document.selectedPages)}`}
-    <Card.Root class="w-full max-h-[50vh] flex flex-col">
+    <Card.Root
+      class="w-full max-h-[50vh] flex flex-col {verifiedDocuments[document.id]
+        ? 'bg-green-100'
+        : ''}"
+    >
       <Card.Header>
         <Card.Title class="text-lg font-semibold break-all">{title}</Card.Title>
+
         <Card.Description class="text-sm text-gray-500 break-all">
           {getCardDescription(document)}
         </Card.Description>
@@ -486,8 +529,19 @@
               >
                 <Pencil class="mr-2 h-4 w-4" />Editar nome
               </Button>
-              <Button onclick={() => openInExplorer(document.documentPath)}>
-                <FolderOpen class="mr-2 h-4 w-4" />Abrir no Explorer
+              {#if verifiedDocuments[document.id]}
+                <Button onclick={() => openInExplorer(document.documentPath)}>
+                  <FolderOpen class="mr-2 h-4 w-4" />Abrir no Explorer
+                </Button>
+              {/if}
+              <Button
+                onclick={async () =>
+                  await handleRemovePageNumberPrefix(document)}
+                disabled={verifiedDocuments[document.id]}
+              >
+                <CheckCheck class="mr-2 h-4 w-4" />
+
+                {verifiedDocuments[document.id] ? "Verificado" : "Verificar"}
               </Button>
             </div>
           </div>

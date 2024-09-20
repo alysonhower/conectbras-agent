@@ -66,6 +66,7 @@ export class PagePreprocessStageResultModel
 
 export interface PagePreprocessStageSuccess extends PagePreprocessStage {
   pagePreprocessStageResult: PagePreprocessStageResult;
+  pageNumberPrefix: string;
 }
 
 export class PagePreprocessStageSuccessModel
@@ -75,20 +76,25 @@ export class PagePreprocessStageSuccessModel
   dataDirectory: string;
   imagesDirectory: string;
   pagePreprocessStageResult: PagePreprocessStageResultModel;
+  pageNumberPrefix: string;
   constructor(
     id: string,
     selectedPages: number[],
     dataDirectory: string,
     imagesDirectory: string,
     pagePreprocessStageResult: PagePreprocessStageResult,
+    pageNumberPrefix: string,
   ) {
     this.id = id;
+
     this.selectedPages = selectedPages;
     this.dataDirectory = dataDirectory;
     this.imagesDirectory = imagesDirectory;
     this.pagePreprocessStageResult = pagePreprocessStageResult;
+    this.pageNumberPrefix = pageNumberPrefix;
   }
 }
+
 
 export interface PagePreprocessStageError extends PagePreprocessStage {
   errorMessage: string;
@@ -128,6 +134,7 @@ export class DocumentProcessStageModel implements DocumentProcessStage {
   pagePreprocessStageResult: PagePreprocessStageResultModel;
   documentPath: string;
   fileName: string;
+  pageNumberPrefix: string;
   constructor(
     id: string,
     selectedPages: number[],
@@ -136,16 +143,20 @@ export class DocumentProcessStageModel implements DocumentProcessStage {
     pagePreprocessStageResult: PagePreprocessStageResult,
     documentPath: string,
     fileName: string,
+    pageNumberPrefix: string,
   ) {
     this.id = id;
+
     this.selectedPages = selectedPages;
     this.dataDirectory = dataDirectory;
     this.imagesDirectory = imagesDirectory;
     this.pagePreprocessStageResult = pagePreprocessStageResult;
     this.documentPath = documentPath;
     this.fileName = fileName;
+    this.pageNumberPrefix = pageNumberPrefix;
   }
 }
+
 
 export interface DocumentProcessStageSuccess extends DocumentProcessStage {
   pagePreprocessStageResult: PagePreprocessStageResult;
@@ -153,15 +164,14 @@ export interface DocumentProcessStageSuccess extends DocumentProcessStage {
 
 export class DocumentProcessStageSuccessModel
   implements DocumentProcessStageSuccess {
-  stage = $state<DocumentProcessStageSuccess>({
-    id: "",
-    selectedPages: [],
-    dataDirectory: "",
-    imagesDirectory: "",
-    pagePreprocessStageResult: new PagePreprocessStageResultModel([], "", "", "", ""),
-    documentPath: "",
-    fileName: "",
-  });
+  id: string;
+  selectedPages: number[];
+  dataDirectory: string;
+  imagesDirectory: string;
+  pagePreprocessStageResult: PagePreprocessStageResultModel;
+  documentPath: string;
+  fileName: string;
+  pageNumberPrefix: string;
   constructor(
     id: string,
     selectedPages: number[],
@@ -170,37 +180,26 @@ export class DocumentProcessStageSuccessModel
     pagePreprocessStageResult: PagePreprocessStageResult,
     documentPath: string,
     fileName: string,
+    pageNumberPrefix: string,
   ) {
-    this.stage.id = id;
-    this.stage.selectedPages = selectedPages;
-    this.stage.dataDirectory = dataDirectory;
-    this.stage.imagesDirectory = imagesDirectory;
-    this.stage.pagePreprocessStageResult = pagePreprocessStageResult;
-    this.stage.documentPath = documentPath;
-    this.stage.fileName = fileName;
-  }
-  get id() {
-    return this.stage.id;
-  }
-  get selectedPages() {
-    return this.stage.selectedPages;
-  }
-  get dataDirectory() {
-    return this.stage.dataDirectory;
-  }
-  get imagesDirectory() {
-    return this.stage.imagesDirectory;
-  }
-  get pagePreprocessStageResult() {
-    return this.stage.pagePreprocessStageResult;
-  }
-  get documentPath() {
-    return this.stage.documentPath;
-  }
-  get fileName() {
-    return this.stage.fileName;
+    this.id = id;
+
+    this.selectedPages = selectedPages;
+    this.dataDirectory = dataDirectory;
+    this.imagesDirectory = imagesDirectory;
+    this.pagePreprocessStageResult = new PagePreprocessStageResultModel(
+      pagePreprocessStageResult.dates,
+      pagePreprocessStageResult.type_name,
+      pagePreprocessStageResult.type_abbr,
+      pagePreprocessStageResult.summary,
+      pagePreprocessStageResult.suggested_file_name
+    );
+    this.documentPath = documentPath;
+    this.fileName = fileName;
+    this.pageNumberPrefix = pageNumberPrefix;
   }
 }
+
 
 export interface DocumentProcessStageError extends DocumentProcessStage {
   errorMessage: string;
@@ -216,7 +215,7 @@ export class DocumentProcessStageErrorModel
   documentPath: string;
   fileName: string;
   errorMessage: string;
-
+  pageNumberPrefix: string;
   constructor(
     id: string,
     selectedPages: number[],
@@ -226,8 +225,10 @@ export class DocumentProcessStageErrorModel
     documentPath: string,
     fileName: string,
     errorMessage: string,
+    pageNumberPrefix: string,
   ) {
     this.id = id;
+
     this.selectedPages = selectedPages;
     this.dataDirectory = dataDirectory;
     this.imagesDirectory = imagesDirectory;
@@ -235,8 +236,10 @@ export class DocumentProcessStageErrorModel
     this.documentPath = documentPath;
     this.fileName = fileName;
     this.errorMessage = errorMessage;
+    this.pageNumberPrefix = pageNumberPrefix;
   }
 }
+
 
 export interface FinishedDocumentProcessStage
   extends DocumentProcessStageSuccess {
@@ -253,7 +256,7 @@ export class FinishedDocumentProcessStageModel
   documentPath: string;
   fileName: string;
   fileNameHistory: string[];
-
+  pageNumberPrefix: string;
   constructor(
     id: string,
     selectedPages: number[],
@@ -263,8 +266,10 @@ export class FinishedDocumentProcessStageModel
     documentPath: string,
     fileName: string,
     fileNameHistory: string[],
+    pageNumberPrefix: string,
   ) {
     this.id = id;
+
     this.selectedPages = selectedPages;
     this.dataDirectory = dataDirectory;
     this.imagesDirectory = imagesDirectory;
@@ -272,8 +277,10 @@ export class FinishedDocumentProcessStageModel
     this.documentPath = documentPath;
     this.fileName = fileName;
     this.fileNameHistory = fileNameHistory;
+    this.pageNumberPrefix = pageNumberPrefix;
   }
 }
+
 
 export type Stage =
   | PagePreprocessStageModel

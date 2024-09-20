@@ -58,6 +58,7 @@ pub struct PagePreprocessStageSuccess {
     pub data_directory: String,
     pub images_directory: String,
     pub page_preprocess_stage_result: PagePreprocessStageResult,
+    pub page_number_prefix: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -77,9 +78,10 @@ pub struct DocumentProcessStage {
     pub selected_pages: Vec<u32>,
     pub data_directory: String,
     pub images_directory: String,
-    pub page_preprocess_stage_result: PagePreprocessStageResult,
     pub document_path: String,
     pub file_name: String,
+    pub page_preprocess_stage_result: PagePreprocessStageResult,
+    pub page_number_prefix: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -89,10 +91,12 @@ pub struct DocumentProcessStageSuccess {
     pub selected_pages: Vec<u32>,
     pub data_directory: String,
     pub images_directory: String,
-    pub page_preprocess_stage_result: PagePreprocessStageResult,
     pub document_path: String,
     pub file_name: String,
+    pub page_preprocess_stage_result: PagePreprocessStageResult,
+    pub page_number_prefix: String,
 }
+
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -101,9 +105,10 @@ pub struct DocumentProcessStageError {
     pub selected_pages: Vec<u32>,
     pub data_directory: String,
     pub images_directory: String,
-    pub page_preprocess_stage_result: PagePreprocessStageResult,
     pub document_path: String,
     pub file_name: String,
+    pub page_preprocess_stage_result: PagePreprocessStageResult,
+    pub page_number_prefix: String,
     pub error_message: String,
 }
 

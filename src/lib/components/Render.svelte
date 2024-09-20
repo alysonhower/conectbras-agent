@@ -546,6 +546,7 @@
         runPagePreprocessStageSucess.dataDirectory,
         runPagePreprocessStageSucess.imagesDirectory,
         runPagePreprocessStageSucess.pagePreprocessStageResult,
+        runPagePreprocessStageSucess.pageNumberPrefix,
       );
 
       const ppsIndex = renderState.inProcessList.findIndex(
@@ -568,6 +569,7 @@
         pagePreprocessStageSuccess.pagePreprocessStageResult,
         globalSetupState.documentClonePath,
         fileName,
+        pagePreprocessStageSuccess.pageNumberPrefix,
       );
 
       const documentProcessStageInProcessInstanceModel =
@@ -606,6 +608,7 @@
             documentProcessStageSuccessModel.documentPath,
             documentProcessStageSuccessModel.fileName,
             [documentProcessStageSuccessModel.fileName],
+            pagePreprocessStageSuccess.pageNumberPrefix,
           );
 
         renderState.finishedDocumentsProcessStage.push(
@@ -633,6 +636,7 @@
             documentProcessStageError.documentPath,
             documentProcessStageError.fileName,
             documentProcessStageError.errorMessage,
+            pagePreprocessStageSuccess.pageNumberPrefix,
           );
 
         renderState.documentProcessStageErrorList.push(
@@ -829,13 +833,18 @@
     const unsubscribe1 = listen("utility-stdout", (data) => {
       // console.log("Utility stdout:", data.payload);
     });
-    const unsubscribe2 = listen("utility-terminated", (data) => {
+
+    const unsubscribe2 = listen("utility-stderr", (data) => {
+      console.error("Utility stderr:", data.payload);
+    });
+    const unsubscribe3 = listen("utility-terminated", (data) => {
       // console.log("Utility terminated:", data.payload);
     });
-    const unsubscribe3 = listen("utility-error", (data) => {
-      // console.error("Utility error:", data.payload);
+    const unsubscribe4 = listen("utility-error", (data) => {
+      console.error("Utility error:", data.payload);
     });
-    const unsubscribe4 = listen<ProgressUpdate>("progress", (data) => {
+
+    const unsubscribe5 = listen<ProgressUpdate>("progress", (data) => {
       // console.log("Progress:", data.payload);
       const {
         pages_processed,
@@ -851,7 +860,7 @@
       renderState.isExtractingImages =
         extracted_page_numbers.length !== total_document_pages;
     });
-    const unsubscribe5 = listen<number>("total-extracted-pages", (event) => {
+    const unsubscribe6 = listen<number>("total-extracted-pages", (event) => {
       // console.log(`All ${event.payload} .webp files match the PDF pages.`);
       renderState.extractedPages = Array.from(
         { length: event.payload },
@@ -866,6 +875,7 @@
       unsubscribe3.then((unsubscribe3) => unsubscribe3());
       unsubscribe4.then((unsubscribe4) => unsubscribe4());
       unsubscribe5.then((unsubscribe5) => unsubscribe5());
+      unsubscribe6.then((unsubscribe6) => unsubscribe6());
     };
   });
 

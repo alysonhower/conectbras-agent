@@ -26,6 +26,7 @@ pub async fn run_page_preprocess_stage(
         });
     }
 
+    let page_number_prefix = format!("p-{}", page_preprocess_stage.selected_pages.iter().map(|&x| x.to_string()).collect::<Vec<String>>().join("-"));
     let pages_paths = page_preprocess_stage.get_pages_paths();
     let preprocessed_pages_directory = page_preprocess_stage.get_preprocessed_pages_directory();
     for page_path in pages_paths.clone() {
@@ -106,8 +107,10 @@ pub async fn run_page_preprocess_stage(
                 data_directory: page_preprocess_stage.data_directory,
                 images_directory: page_preprocess_stage.images_directory,
                 page_preprocess_stage_result: preprocess_result,
+                page_number_prefix,
             })
         }
+
         Err(e) => Err(PagePreprocessStageError {
             id: page_preprocess_stage.id,
             data_directory: page_preprocess_stage.data_directory,
@@ -133,13 +136,17 @@ pub async fn run_document_process_stage(
             document_path: document_process_stage.document_path,
             file_name: document_process_stage.file_name,
             error_message: "Forced error for testing".to_string(),
+            page_number_prefix: document_process_stage.page_number_prefix,
         });
     }
+
 
     let file_name = document_process_stage
         .page_preprocess_stage_result
         .suggested_file_name
         .clone();
+
+    let file_name = format!("{}-{}.pdf", document_process_stage.page_number_prefix, file_name);
     let input_path = document_process_stage.document_path.clone();
     let data_directory = document_process_stage.data_directory.clone();
     let pages_to_process = document_process_stage
@@ -148,6 +155,7 @@ pub async fn run_document_process_stage(
         .map(|page| page.to_string())
         .collect::<Vec<String>>()
         .join(",");
+
     let output_dir = Path::new(&data_directory).join("documents");
     if !output_dir.exists() {
         fs::create_dir_all(&output_dir).map_err(|e| DocumentProcessStageError {
@@ -161,8 +169,10 @@ pub async fn run_document_process_stage(
             document_path: document_process_stage.document_path.clone(),
             file_name: document_process_stage.file_name.clone(),
             error_message: format!("Failed to create output directory: {}", e),
+            page_number_prefix: document_process_stage.page_number_prefix.clone(),
         })?;
     }
+
     let output_path = output_dir
         .join(&file_name)
         .with_extension("pdf")
@@ -195,8 +205,10 @@ pub async fn run_document_process_stage(
             document_path: document_process_stage.document_path,
             file_name: document_process_stage.file_name,
             error_message: "Failed to call QPDF utility".to_string(),
+            page_number_prefix: document_process_stage.page_number_prefix,
         });
     }
+
 
     // OCRmyPDF utility call
     let is_success = call_utility(
@@ -230,8 +242,10 @@ pub async fn run_document_process_stage(
             document_path: document_process_stage.document_path,
             file_name: document_process_stage.file_name,
             error_message: "Failed to call OCRmyPDF utility".to_string(),
+            page_number_prefix: document_process_stage.page_number_prefix,
         });
     }
+
 
 
 
@@ -243,8 +257,10 @@ pub async fn run_document_process_stage(
         page_preprocess_stage_result: document_process_stage.page_preprocess_stage_result,
         document_path: output_path,
         file_name,
+        page_number_prefix: document_process_stage.page_number_prefix,
     })
 }
+
 
 #[tauri::command]
 pub fn run_update_file_name(file_name: String, document_path: String) -> Result<String, String> {
