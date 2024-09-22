@@ -44,7 +44,8 @@ export interface PagePreprocessStageResult {
 }
 
 export class PagePreprocessStageResultModel
-  implements PagePreprocessStageResult {
+  implements PagePreprocessStageResult
+{
   dates: { date: string; description: string }[];
   type_name: string;
   type_abbr: string;
@@ -71,7 +72,8 @@ export interface PagePreprocessStageSuccess extends PagePreprocessStage {
 }
 
 export class PagePreprocessStageSuccessModel
-  implements PagePreprocessStageSuccess {
+  implements PagePreprocessStageSuccess
+{
   id: string;
   selectedPages: number[];
   dataDirectory: string;
@@ -162,7 +164,8 @@ export interface DocumentProcessStageSuccess extends DocumentProcessStage {
 }
 
 export class DocumentProcessStageSuccessModel
-  implements DocumentProcessStageSuccess {
+  implements DocumentProcessStageSuccess
+{
   id: string;
   selectedPages: number[];
   dataDirectory: string;
@@ -204,7 +207,8 @@ export interface DocumentProcessStageError extends DocumentProcessStage {
 }
 
 export class DocumentProcessStageErrorModel
-  implements DocumentProcessStageError {
+  implements DocumentProcessStageError
+{
   id: string;
   selectedPages: number[];
   dataDirectory: string;
@@ -244,7 +248,8 @@ export interface FinishedDocumentProcessStage
 }
 
 export class FinishedDocumentProcessStageModel
-  implements FinishedDocumentProcessStage {
+  implements FinishedDocumentProcessStage
+{
   id: string;
   selectedPages: number[];
   dataDirectory: string;
@@ -373,8 +378,16 @@ class GlobalSetupState {
     return imagesDirectory;
   }
 
-  async updateFileName({ id, newFileName }: { id: string, newFileName: string }) {
-    const index = this.state.finishedDocumentsProcessStage.findIndex((doc) => doc.id === id);
+  async updateFileName({
+    id,
+    newFileName,
+  }: {
+    id: string;
+    newFileName: string;
+  }) {
+    const index = this.state.finishedDocumentsProcessStage.findIndex(
+      (doc) => doc.id === id,
+    );
     if (index === -1) {
       console.error(`Document with id ${id} not found`);
       return;
@@ -383,13 +396,17 @@ class GlobalSetupState {
     this.state.finishedDocumentsProcessStage.splice(index, 1);
     const originalFileName = document.fileName;
     try {
-
-      const cleanNewFileName = newFileName.replace(document.pageNumberPrefix+"-", "");
+      const cleanNewFileName = newFileName.replace(
+        document.pageNumberPrefix + "-",
+        "",
+      );
       const newDocumentPath = await invoke<string>("run_update_file_name", {
         newFileName: cleanNewFileName,
         documentPath: document.documentPath,
       });
-      const fileNameHistory = document.fileNameHistory.includes(cleanNewFileName)
+      const fileNameHistory = document.fileNameHistory.includes(
+        cleanNewFileName,
+      )
         ? document.fileNameHistory
         : [...document.fileNameHistory, cleanNewFileName];
       const newFinishedDocumentStage = new FinishedDocumentProcessStageModel(
@@ -404,7 +421,9 @@ class GlobalSetupState {
         document.pageNumberPrefix,
       );
       this.state.finishedDocumentsProcessStage.push(newFinishedDocumentStage);
-      console.log(`File name updated successfully: ${originalFileName} -> ${cleanNewFileName}`);
+      console.log(
+        `File name updated successfully: ${originalFileName} -> ${cleanNewFileName}`,
+      );
       return cleanNewFileName;
     } catch (error) {
       console.error("Error updating file name:", error);

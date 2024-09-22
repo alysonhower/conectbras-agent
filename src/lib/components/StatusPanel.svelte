@@ -10,6 +10,7 @@
     RefreshCw,
     CheckCheck,
     FolderOpen,
+    Undo,
   } from "lucide-svelte/icons";
   import { v4 as uuidv4 } from "uuid";
 
@@ -442,6 +443,22 @@
       }
     });
   });
+
+  const handleUndo = (document: FinishedDocumentProcessStageModel) => {
+    const index = renderState.finishedDocumentsProcessStage.findIndex(
+      (doc) => doc.id === document.id,
+    );
+    if (index !== -1) {
+      renderState.finishedDocumentsProcessStage.splice(index, 1);
+    }
+    renderState.selectedPages.push(...document.selectedPages);
+    renderState.selectedPages.sort((a, b) => a - b);
+    invoke("delete_processed_document", { filePath: document.documentPath })
+      .then(() => console.log("Processed document deleted successfully"))
+      .catch((error) =>
+        console.error("Error deleting processed document:", error),
+      );
+  };
 </script>
 
 <div class="w-full h-full overflow-y-auto p-4 space-y-4">
@@ -489,8 +506,11 @@
                 {:else}
                   <CheckCheck class="mr-2 h-4 w-4" />
                 {/if}
-
                 {verifiedDocuments[document.id] ? "Editar nome" : "Verificar"}
+              </Button>
+              <Button onclick={() => handleUndo(document)}>
+                <Undo class="mr-2 h-4 w-4" />
+                Desfazer
               </Button>
             </div>
           </div>

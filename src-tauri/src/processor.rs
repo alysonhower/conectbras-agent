@@ -279,3 +279,8 @@ pub fn open_in_explorer(path: &str) -> Result<(), String> {
     command.spawn().map_err(|_| "Failed to open in explorer")?;
     Ok(())
 }
+
+#[tauri::command]
+pub fn delete_processed_document(file_path: String) -> Result<(), String> {
+    fs::remove_file(file_path).map_err(|e| format!("Failed to delete file: {}", e))
+}

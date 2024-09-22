@@ -4,7 +4,7 @@ mod processor;
 mod utilities;
 pub use utilities::{call_utility, call_utility2};
 use extractor::run_extract_document_images_stage;
-use processor::{run_page_preprocess_stage, run_document_process_stage, run_update_file_name, open_in_explorer};
+use processor::{run_page_preprocess_stage, run_document_process_stage, run_update_file_name, open_in_explorer, delete_processed_document};
 // use llm::{anthropic_pipeline, update_file_name, rename_finished_document};
 // use processor::{final_pipeline, open_in_explorer};
 
@@ -26,7 +26,8 @@ pub fn run() {
             run_page_preprocess_stage,
             run_document_process_stage,
             run_update_file_name,
-            open_in_explorer
+            open_in_explorer,
+            delete_processed_document
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
