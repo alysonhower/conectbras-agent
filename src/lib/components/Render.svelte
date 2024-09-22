@@ -49,7 +49,7 @@
     PagePreprocessStageResultModel,
     PagePreprocessStageErrorModel,
     DocumentProcessStageErrorModel,
-  } from "./processWorkflowContext.svelte";
+  } from "./models.svelte";
 
   interface ProgressUpdate {
     pages_processed: number;

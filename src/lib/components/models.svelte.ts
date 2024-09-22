@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 
 export interface ExtractDocumentImagesStage {
@@ -95,7 +96,6 @@ export class PagePreprocessStageSuccessModel
   }
 }
 
-
 export interface PagePreprocessStageError extends PagePreprocessStage {
   errorMessage: string;
 }
@@ -157,7 +157,6 @@ export class DocumentProcessStageModel implements DocumentProcessStage {
   }
 }
 
-
 export interface DocumentProcessStageSuccess extends DocumentProcessStage {
   pagePreprocessStageResult: PagePreprocessStageResult;
 }
@@ -192,14 +191,13 @@ export class DocumentProcessStageSuccessModel
       pagePreprocessStageResult.type_name,
       pagePreprocessStageResult.type_abbr,
       pagePreprocessStageResult.summary,
-      pagePreprocessStageResult.suggested_file_name
+      pagePreprocessStageResult.suggested_file_name,
     );
     this.documentPath = documentPath;
     this.fileName = fileName;
     this.pageNumberPrefix = pageNumberPrefix;
   }
 }
-
 
 export interface DocumentProcessStageError extends DocumentProcessStage {
   errorMessage: string;
@@ -240,7 +238,6 @@ export class DocumentProcessStageErrorModel
   }
 }
 
-
 export interface FinishedDocumentProcessStage
   extends DocumentProcessStageSuccess {
   fileNameHistory: string[];
@@ -269,7 +266,6 @@ export class FinishedDocumentProcessStageModel
     pageNumberPrefix: string,
   ) {
     this.id = id;
-
     this.selectedPages = selectedPages;
     this.dataDirectory = dataDirectory;
     this.imagesDirectory = imagesDirectory;
@@ -280,7 +276,6 @@ export class FinishedDocumentProcessStageModel
     this.pageNumberPrefix = pageNumberPrefix;
   }
 }
-
 
 export type Stage =
   | PagePreprocessStageModel
@@ -376,6 +371,45 @@ class GlobalSetupState {
     const dataDirectory = this.dataDirectory;
     const imagesDirectory = `${dataDirectory}\\images`;
     return imagesDirectory;
+  }
+
+  async updateFileName({ id, newFileName }: { id: string, newFileName: string }) {
+    const index = this.state.finishedDocumentsProcessStage.findIndex((doc) => doc.id === id);
+    if (index === -1) {
+      console.error(`Document with id ${id} not found`);
+      return;
+    }
+    const document = this.state.finishedDocumentsProcessStage[index];
+    this.state.finishedDocumentsProcessStage.splice(index, 1);
+    const originalFileName = document.fileName;
+    try {
+
+      const cleanNewFileName = newFileName.replace(document.pageNumberPrefix+"-", "");
+      const newDocumentPath = await invoke<string>("run_update_file_name", {
+        newFileName: cleanNewFileName,
+        documentPath: document.documentPath,
+      });
+      const fileNameHistory = document.fileNameHistory.includes(cleanNewFileName)
+        ? document.fileNameHistory
+        : [...document.fileNameHistory, cleanNewFileName];
+      const newFinishedDocumentStage = new FinishedDocumentProcessStageModel(
+        document.id,
+        document.selectedPages,
+        document.dataDirectory,
+        document.imagesDirectory,
+        document.pagePreprocessStageResult,
+        newDocumentPath,
+        cleanNewFileName,
+        fileNameHistory,
+        document.pageNumberPrefix,
+      );
+      this.state.finishedDocumentsProcessStage.push(newFinishedDocumentStage);
+      console.log(`File name updated successfully: ${originalFileName} -> ${cleanNewFileName}`);
+      return cleanNewFileName;
+    } catch (error) {
+      console.error("Error updating file name:", error);
+      this.state.finishedDocumentsProcessStage.splice(index, 0, document);
+    }
   }
 
   async clearState() {

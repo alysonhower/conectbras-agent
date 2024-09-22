@@ -33,7 +33,7 @@
     PagePreprocessStageErrorModel,
     DocumentProcessStageErrorModel,
     InProcessInstanceModel,
-  } from "./processWorkflowContext.svelte";
+  } from "./models.svelte";
 
   const renderState = globalSetupState.state;
 
@@ -170,44 +170,13 @@
     }
   };
 
-  const updateFileName = async (
-    fileName: string,
-    id: string,
-    documentPath: string,
-  ) => {
-    try {
-      const newDocumentPath = await invoke<string>("run_update_file_name", {
-        fileName,
-        documentPath,
+  const handleVerifyDocument = async (newFileName: string, id: string) => {
+    globalSetupState
+      .updateFileName({ id, newFileName })
+      .then((cleanNewFileName) => {
+        verifiedDocuments[id] = true;
+        newFileNames[id] = cleanNewFileName!;
       });
-      const finishedDocumentsProcessStage =
-        globalSetupState.state.finishedDocumentsProcessStage;
-      const index = finishedDocumentsProcessStage.findIndex(
-        (document) => document.id === id,
-      );
-      const finishedDocument = finishedDocumentsProcessStage[index];
-      let newFileNameHistory = finishedDocument.fileNameHistory;
-      if (!newFileNameHistory.includes(fileName)) {
-        newFileNameHistory.push(fileName);
-      }
-      const newFinishedDocument = new FinishedDocumentProcessStageModel(
-        finishedDocument.id,
-        finishedDocument.selectedPages,
-        finishedDocument.dataDirectory,
-        finishedDocument.imagesDirectory,
-        finishedDocument.pagePreprocessStageResult,
-        newDocumentPath,
-        fileName,
-        newFileNameHistory,
-        finishedDocument.pageNumberPrefix,
-      );
-      if (index !== -1) {
-        finishedDocumentsProcessStage.splice(index, 1);
-      }
-      finishedDocumentsProcessStage.push(newFinishedDocument);
-    } catch (error) {
-      console.error(error);
-    }
   };
 
   interface NewFileNames {
@@ -221,20 +190,6 @@
   let newFileNames = $state<NewFileNames>({});
 
   let verifiedDocuments = $state<VerifiedDocuments>({});
-
-  const handleRemovePageNumberPrefix = async (
-    finishedDocument: FinishedDocumentProcessStageModel,
-  ) => {
-    try {
-      const fileName =
-        finishedDocument.pagePreprocessStageResult.suggested_file_name;
-      const documentPath = finishedDocument.documentPath;
-      await updateFileName(fileName, finishedDocument.id, documentPath);
-      verifiedDocuments[finishedDocument.id] = true;
-    } catch (error) {
-      console.error(error);
-    }
-  };
 
   $effect(() => {
     newFileNames;
@@ -517,18 +472,6 @@
               placeholder={document.fileName}
             />
             <div class="flex justify-end space-x-2 w-full">
-              <Button
-                disabled={!newFileNames[document.id] ||
-                  newFileNames[document.id] === document.fileName}
-                onclick={async () =>
-                  await updateFileName(
-                    newFileNames[document.id] || document.fileName,
-                    document.id,
-                    document.documentPath,
-                  )}
-              >
-                <Pencil class="mr-2 h-4 w-4" />Editar nome
-              </Button>
               {#if verifiedDocuments[document.id]}
                 <Button onclick={() => openInExplorer(document.documentPath)}>
                   <FolderOpen class="mr-2 h-4 w-4" />Abrir no Explorer
@@ -536,12 +479,18 @@
               {/if}
               <Button
                 onclick={async () =>
-                  await handleRemovePageNumberPrefix(document)}
-                disabled={verifiedDocuments[document.id]}
+                  await handleVerifyDocument(
+                    newFileNames[document.id] || document.fileName,
+                    document.id,
+                  )}
               >
-                <CheckCheck class="mr-2 h-4 w-4" />
+                {#if verifiedDocuments[document.id]}
+                  <Pencil class="mr-2 h-4 w-4" />
+                {:else}
+                  <CheckCheck class="mr-2 h-4 w-4" />
+                {/if}
 
-                {verifiedDocuments[document.id] ? "Verificado" : "Verificar"}
+                {verifiedDocuments[document.id] ? "Editar nome" : "Verificar"}
               </Button>
             </div>
           </div>
